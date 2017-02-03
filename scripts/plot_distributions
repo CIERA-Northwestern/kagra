@@ -1,0 +1,236 @@
+#!/usr/bin/env python
+
+import sys
+import math
+import os
+import glob
+import argparse
+import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+# FIXME: need dvipng to conver latex to image format
+#import plotutils
+#plotutils.latexify()
+
+from common import *
+
+parser = argparse.ArgumentParser(description='Freezing param analysis: histogram and cdf for specified parameter combos at 67,90,95 or 99%/ confidence')
+parser.add_argument("-p", '--param', type=str, help='First parameter of interest', action="append")
+parser.add_argument("-b", '--basepath', type=str, help='Base path to search for results.', action='append')
+parser.add_argument("-i", '--inj-xml', type=str, help='Injection XML used (optional)')
+# parser.add_argument('confidence', type=int, nargs='?', default=90, help='confidence region(67,90,95,99)')
+arg = parser.parse_args()
+params = arg.param
+bpath = arg.basepath
+# confidence = arg.confidence
+
+def paths_to_files(bpath):
+    files = glob.glob(os.path.join(bpath, '*/post/posterior_samples.dat'))
+    # FIXME: Hack for freezing params directory structure
+    if len(files) == 0:
+        files = glob.glob(os.path.join(bpath, '*/none/post/posterior_samples.dat'))
+    return files
+
+def paths_to_conffiles(bpath):
+    files = glob.glob(os.path.join(bpath, '*/post/confidence_levels.txt'))
+    # FIXME: Hack for freezing params directory structure
+    if len(files) == 0:
+        files = glob.glob(os.path.join(bpath, '*/none/post/confidence_levels.txt'))
+    return files
+
+def parse_run_string(path):
+    # FIXME: Hack for freezing params directory structure
+    if "none" in path:
+        run_n = path.split("/")[-4]
+    else:
+        run_n = path.split("/")[-3]
+    return run_n
+
+# FIXME: Change this to default to true once we've got consistent parameters
+def extracting_conflevel(textfile, param, error=False, verbose=False):
+    with open(textfile, 'r') as conf:
+        splitted = map(str.split, conf.readlines())
+    if verbose:
+        print "-------- " + textfile
+        print filter(lambda s: s[0] == param, splitted)
+
+    confreg = [float(item[2]) for item in splitted if item[0] == param]
+
+    if len(confreg) != 1:
+        if error:
+            raise ValueError("Parameter %s not found in %s" % (param, textfile))
+        else:
+            return float("nan")
+    return confreg[0]
+
+def conf_intrv(hist, bins):
+    dx = bins[1] - bins[0]
+    srt = hist.argsort()
+    idx = np.searchsorted(hist[srt].cumsum() * dx, 0.1)
+    intr = bins[srt[idx:]]
+    # FIXME: This is actually off by a bin width
+    return (intr.min(), intr.max())
+
+def conf_intrv2(hist, bins):
+    from glue.segments import segment, segmentlist
+    dx = bins[1] - bins[0]
+    srt = hist.argsort()
+    bins = map(segment, list(zip(bins[:-1], bins[1:])))
+    idx = np.searchsorted(hist[srt].cumsum() * dx, 0.1)
+    intrv = segmentlist()
+    for bidx in srt[idx:]:
+        intrv.append(bins[bidx])
+    return intrv.coalesce()
+
+# Optionally load injections
+sim_data = None
+if arg.inj_xml:
+    from glue.ligolw import lsctables, ligolw, utils
+    lsctables.use_in(ligolw.LIGOLWContentHandler)
+    xmldoc = utils.load_filename(arg.inj_xml, contenthandler=ligolw.LIGOLWContentHandler)
+    sim_data = lsctables.SimInspiralTable.get_table(xmldoc)
+    print "Loaded %d injections" % len(sim_data)
+
+# Collect paths to data files
+paths = {}
+runs = None
+for bp in bpath:
+    paths[bp] = paths_to_files(bp)
+    if runs is None:
+        runs = set(map(parse_run_string, paths[bp]))
+    else:
+        # FIXME: warn about runs without counterparts
+        runs &= set(map(parse_run_string, paths[bp]))
+    paths[bp] = dict(zip(map(parse_run_string, paths[bp]), paths[bp]))
+    for k, v in paths[bp].iteritems():
+        paths[bp][k] = np.genfromtxt(v, names=True)
+
+# PDF stuff
+# Number of columns
+spread_factor = 4
+# number of rows * columns
+nruns = len(runs)
+print "Collected %d runs, dividing into %d columns" % (nruns, spread_factor)
+
+ncat, nbins = len(bpath), 20
+
+# Iterate through data and form posteriors
+for param in params:
+
+    plt.figure(0)
+    plt.clf()
+    print "-------- Plotting PDFs for param %s" % param
+
+    i = 1
+    for run in runs:
+        ax = plt.subplot(nruns/spread_factor+1, spread_factor, i)
+        hist = np.zeros((nbins, ncat))
+
+        b = nbins
+        for bp, data in paths.iteritems():
+
+            samples = data[run][param]
+            try:
+                if any((RANGES[param][0] > samples) | (RANGES[param][1] < samples)):
+                    print "(%s) Warning some samples are outside the range." % run
+
+                hist[:,bpath.index(bp)], b = \
+                    np.histogram(samples, bins=nbins, range=RANGES[param],
+                                 normed=True)
+            except KeyError:
+                print >>sys.stderr, "(%s) Couldn't find samples for 'none', skipping event" % run
+                continue
+
+            if any((RANGES[param][0] > samples) | (RANGES[param][1] < samples)):
+                print "(%s) Warning some samples are outside the range." % run
+
+        ax.locator_params(axis='x', nbins=3)
+        xx, yy = np.meshgrid(b, range(ncat + 1))
+        plt.pcolormesh(xx, yy, hist.T, cmap=matplotlib.cm.Reds)
+
+        # Set the number of ticks so its consistent across all plots
+        plt.xlim(RANGES[param])
+        # Turn off tick marks where not necessary
+        if i <= (nruns - spread_factor):
+            ax.set_xticklabels([])
+        # Y ticks are not necessary at all
+        ax.yaxis.set_major_locator(plt.NullLocator())
+
+        # Plot confidence band
+        for j, h in enumerate(hist.T):
+            ymin, ymax = j / float(ncat), (j+1) / float(ncat)
+
+            if len(np.nonzero(h)) == 0:
+                print "Skipping %s / %d, no data" % (run, j)
+                continue
+
+            #intrv = conf_intrv(h, b)
+            for intrv in conf_intrv2(h, b):
+                # FIXME: Use hatching or something
+                plt.axvspan(intrv[0], intrv[1], ymin, ymax, facecolor='none', edgecolor='g')
+                plt.axvspan(intrv[0], intrv[1], ymin, ymax, facecolor='g', edgecolor='none', alpha=0.3)
+
+        intrv = conf_intrv2(h, b)
+        if len(intrv) != 1:
+            print "Actual confidence interval disjoint for %s, %d" % (run, j)
+
+        if sim_data:
+            inj_val = GET_PARAM[param](sim_data[int(run)])
+            plt.axvline(inj_val, color='c')
+
+        # We could do SNR or something here...
+        # FIXME: the space at the end is a hack to stop the label from clipping
+        plt.ylabel(run + " ", rotation='horizontal', verticalalignment='center', fontsize=10, labelpad=10)
+
+        i += 1
+
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0)
+    plt.savefig("%s_1Dpdf" % param)
+    plt.clf()
+
+    # CDF stuff
+    ls_keys = ['-', '-.', '--']
+    color_vals = ['b', 'g', 'r', 'c', 'k']
+
+    print "-------- Plotting CDFs for param %s" % param
+    i = params.index(param) + 1
+    plt.figure(1)
+    plt.clf()
+    #plt.subplot(1, len(params), i)
+
+    first = True
+    for bp in paths:
+        conflevels = [extracting_conflevel(textfile, param) for textfile in paths_to_conffiles(bp)]
+        conflevels = np.asarray(sorted(conflevels))
+
+        # FIXME: fill_between interpolates rather than using steps
+        if first:
+            alpha = 0.95
+            y_axis = np.linspace(0, 1, num=len(conflevels))
+            error_width = math.sqrt(1./2/len(conflevels) * math.log(2/alpha))
+            error_width = np.ones(len(conflevels)) * error_width
+            # Clip the error bounds to fit the domain of the CDF
+            error_width = np.clip(error_width, 0, 1)
+
+            plt.fill_between(conflevels, y_axis - error_width, y_axis + error_width, color='k', alpha=0.3, interpolate=False)
+            first = False
+
+        plt.step(conflevels, y_axis, label='HLV', linestyle=ls_keys[0],
+                 color=color_vals[0])
+        color_vals.append(color_vals.pop(0))
+
+    if param == "mc":
+        plt.semilogx()
+
+    plt.ylabel('Cumulative Fraction')
+
+    plt.ylim(0, 1)
+    plt.grid()
+
+    plt.xlabel(LABELS[param])
+
+    plt.xticks(rotation=45)
+
+    plt.savefig('{0}_1Dcdf'.format(param))
