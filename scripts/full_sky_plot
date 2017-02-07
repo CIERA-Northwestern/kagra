@@ -93,6 +93,7 @@ argp.add_argument("-o", "--overplot", default=None, help="Overplot a function of
 argp.add_argument("-i", "--inj-xml", default=None, help="Path to the injection XML file.")
 argp.add_argument("-p", "--pathspecs", action="append", help="Add file glob paths to be parsed in the following way: \"(name)=(globspec)\", e.g. \"HLV=/path/to/skymaps/*/post/*\"")
 argp.add_argument("-c", "--colorspecs", action="append", help="Add color specs to be parsed in the following way: \"(name)=(colorspec)\", e.g. \"HLV=yellow\" or \"HKLV=snr,viridis\"")
+argp.add_argument("-f", "--file-stem", help="File stem for plotting output.")
 #argp.add_argument("-l", "--runlabels", action="store_true", help="Annotate each area with its run label.")
 args = argp.parse_args()
 
@@ -202,6 +203,8 @@ if args.inj_xml is not None:
     inj = load_injections(args.inj_xml)
     print "Loaded %d injections" % len(inj)
 
+plot_file = args.file_stem + ".png"
+
 cspecs = parse_colorspecs(args.colorspecs)
 for label, cmap in cspecs.iteritems():
     print label + " => " + str(cmap)
@@ -292,10 +295,7 @@ for label, globpat in pspecs.iteritems():
         #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
 
         # FIXME: temporary
-        plt.savefig("test.png")
-        exit()
-
-plt.savefig("test.png")
+        plt.savefig(plot_file)
 
 # Set up colorbars
 for label, cmap in cspecs.iteritems():
@@ -309,12 +309,16 @@ for label, cmap in cspecs.iteritems():
             label = r"Network SNR"
         colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
 
-import json
-with open("error_regions.json", "w") as fout:
-    json.dump(fout, error_regions)
+plt.savefig(plot_file)
 
+error_region_file = args.file_stem + "_error_regions.json"
+import json
+with open(error_region_file, "w") as fout:
+    json.dump(error_regions, fout)
+
+error_region_file = args.file_stem + "_error_regions.png"
 plt.figure(1)
 for label, err_reg in error_regions.iteritems():
     yaxis = np.linspace(0, 1, len(err_reg))
     plt.step(sorted(err_reg), yaxis, label=label)
-plt.savefig("error_regions.png")
+plt.savefig(error_region_file)
