@@ -286,11 +286,7 @@ for label, globpat in pspecs.iteritems():
         # FIXME: temporary
         plt.savefig("test.png")
 
-plt.figure(1)
-for label, err_reg in error_regions.iteritems():
-    yaxis = np.linspace(0, 1, len(err_reg))
-    plt.step(err_reg, yaxis, label=label)
-plt.savefig("error_regions.png")
+plt.savefig("test.png")
 
 # Set up colorbars
 for label, cmap in cspecs.iteritems():
@@ -304,4 +300,12 @@ for label, cmap in cspecs.iteritems():
             label = r"Network SNR"
         colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
 
-plt.savefig("test.png")
+import json
+with open("error_regions.json", "w") as fout:
+    json.dump(fout, error_regions)
+
+plt.figure(1)
+for label, err_reg in error_regions.iteritems():
+    yaxis = np.linspace(0, 1, len(err_reg))
+    plt.step(sorted(err_reg), yaxis, label=label)
+plt.savefig("error_regions.png")
