@@ -15,6 +15,7 @@ from matplotlib import pyplot as plt
 from matplotlib import cm as mpl_cm
 from matplotlib import lines as mpl_lines
 from matplotlib import colorbar
+from matplotlib.ticker import MaxNLocator
 import matplotlib.gridspec as gridspec
 
 from skyutils import *
@@ -119,6 +120,7 @@ ra_grid, dec_grid, net_pat, net_align, dpf = \
     net_antenna_pattern(gpstime, network)
 #print np.max(net_pat), np.max(net_align)
 
+
 # FIXME: Still getting warnings, not sure how this is supposed to work.
 #net_pat, ra_grid = basemap.shiftgrid(180, net_pat.flatten(), ra_grid.flatten(), start=False)
 #net_pat_tmp, ra_grid_tmp = basemap.shiftgrid(180., net_pat.flatten(), ra_grid.flatten())
@@ -204,7 +206,7 @@ cspecs = parse_colorspecs(args.colorspecs)
 for label, cmap in cspecs.iteritems():
     print label + " => " + str(cmap)
 
-error_regions = defaultdict(list)
+config_information = defaultdict(list)
 pspecs = parse_pathspecs(args.pathspecs)
 for label, globpat in pspecs.iteritems():
 
@@ -214,7 +216,7 @@ for label, globpat in pspecs.iteritems():
     print "Globbed %d files for pattern %s" % (len(files), globpat)
 
     plt.figure(0)
-    for filename in files:
+    for filename in files: #[:3]:  # Change this to run faster
         enum = get_event_num(filename)
         print "Processing event %d" % enum
 
@@ -244,8 +246,6 @@ for label, globpat in pspecs.iteritems():
             snrs[k] = float(snrs[k])
         print snrs
         print snrs["Network"]
-        error_regions[label].append([prb68 * pix_size, snrs["Network"]])
-
 
         if True:
             cmap = cspecs[label]
@@ -281,15 +281,33 @@ for label, globpat in pspecs.iteritems():
             ra_int, dec_int = m(ra_int, dec_int)
 
             m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
+
+            # Find where prob_int is the highest
+            max_indices = np.unravel_index(np.argmax(prob_int), prob_int.shape)
+
+            # Find this location in ra and dec
+            ra_max = ra_int[max_indices]
+            dec_max = dec_int[max_indices]
+
+            # Find closest values in ra_grid and dec_grid
+            #index_ra =  np.unravel_index(np.argmin(np.abs(ra_grid - ra_max)), ra_grid.shape)
+            #index_dec =  np.unravel_index(np.argmin(np.abs(dec_grid - dec_max)), dec_grid.shape)
+
+
+            # Find related net_pat value at that index
+            # FIXME: I am only using the network pattern value corresponding to the ra, while ignoring dec
+            #antenna_pattern = net_pat[index_ra]
+            #config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern])
+
+            # Use gpstime of this injection to find the network antenna pattern at that time at this ra and dec
+            antenna_pattern = net_antenna_pattern_point(gmst, network, ra_max, dec_max, norm=True)[3]
+            config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern])
+
             # Debuggin
             #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
 
         # FIXME: temporary
         plt.savefig("test_map.png")
-
-print '\n'
-print '\n'
-print '==============================================================================='
 
 plt.figure(1)
 gs = gridspec.GridSpec(3, 3)
@@ -297,32 +315,48 @@ gs.update(hspace=0.0, wspace=0.0)
 ax1 = plt.subplot(gs[1:, :-1])
 ax2 = plt.subplot(gs[0, :-1], sharex=ax1)
 ax3 = plt.subplot(gs[1:, 2], sharey=ax1)
-# err_ref is an iterable where the 0th entry is the error region and first is network SNR
-for label, err_reg in error_regions.iteritems():
-    print label
-    err_reg = np.asarray(err_reg)
-    print err_reg
+
+for label, config in config_information.iteritems():
+    config = np.asarray(config)
+    err_reg = config[:, 0]
+    snr = config[:, 1]
+    antenna_pattern = config[:, 2]
 
     # Scatter plot of SNR vs. Error Regions
-    ax1.scatter(err_reg[:, 0], err_reg[:, 1], label=label)
+    scatter = ax1.scatter(err_reg, antenna_pattern, c=snr, edgecolors='None', label=label, cmap='viridis')
     #ax1.tick_params(top='off', bottom='on', left='on', right='off')
     ax1.set_xlabel('Error Region (squared degrees)')
-    ax1.set_ylabel('Network SNR')
+    ax1.set_ylabel('Network Antenna Pattern')
+    ax1.set_xlim(0, None)
 
     # Histogram of Error Regions
-    ax2.hist(err_reg[:, 0], color='b', histtype='stepfilled')
+    ax2.hist(err_reg, color='gray', histtype='stepfilled')
     ax2.tick_params(axis='x', top='on', bottom='on', labelbottom='off', labeltop='off')
     ax2.set_ylabel('Count')
+    nbins = len(ax1.get_xticklabels())
+    ax2.yaxis.set_major_locator(MaxNLocator(nbins=nbins, prune='lower'))
 
     # Histogram of SNRs
-    ax3.hist(err_reg[:, 1], color='m', histtype='stepfilled', orientation='horizontal')
+    ax3.hist(antenna_pattern, color='gray', histtype='stepfilled', orientation='horizontal')
     ax3.tick_params('y', left='on', right='on', labelleft='off', labelright='off')
     ax3.set_xlabel('Count')
+    #nbins = len(ax3.get_xticklabels())
+    #ax3.yaxis.set_major_locator(MaxNLocator(nbins=nbins, prune='lower'))
+    xticks = ax3.xaxis.get_major_ticks()
+    xticks[0].label1.set_visible(False)
+
+
     #ax3.set_yticklabels([])
 
     #ax1.xlabel('Error Region (squared degrees)')
     #ax1.ylabel('Network SNR')
-    plt.suptitle('SNR and Error Regions for HLVK')
+    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for HKLV')
+    #plt.subplots_adjust(right=0.8)
+    #cbar_ax = plt.add_axes([0.85, 0.15, 0.05, 0.7])
+    cbar = plt.colorbar(scatter, label='Network SNR')
+    cbar.ax.tick_params(labelsize=10)
+
+
     #ax1.grid()
     #plt.step(err_reg[0], yaxis, label=label)
 
