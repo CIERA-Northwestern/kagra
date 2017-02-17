@@ -350,7 +350,7 @@ for label, config in config_information.iteritems():
 
     #ax1.xlabel('Error Region (squared degrees)')
     #ax1.ylabel('Network SNR')
-    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for HKLV')
+    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for ' + str(label))
     #plt.subplots_adjust(right=0.8)
     #cbar_ax = plt.add_axes([0.85, 0.15, 0.05, 0.7])
     cbar = plt.colorbar(scatter, label='Network SNR')
@@ -360,7 +360,7 @@ for label, config in config_information.iteritems():
     #ax1.grid()
     #plt.step(err_reg[0], yaxis, label=label)
 
-plt.savefig("snr_vs_err.png")
+plt.savefig("snr_vs_err_%s.png" % str(label))
 
 
 if False:
