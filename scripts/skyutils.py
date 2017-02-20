@@ -86,7 +86,7 @@ def net_antenna_pattern(gpstime, network, psi=0, npts=100, norm=False):
     net_dpf = net_dpf.reshape(ra_grid.shape) / 2 # we multiplied by two above
 
     if norm:
-        net_pat /= np.sqrt(2 * len(network))
+        net_pat /= np.sqrt(2)  # * len(network))
 
     return ra_grid, dec_grid, net_pat, net_align, net_dpf
 
@@ -135,7 +135,7 @@ def net_antenna_pattern_point(gpstime, network, ra_rad, de_rad, psi=0, npts=100,
     #net_dpf = net_dpf.reshape(ra_grid.shape) / 2 # we multiplied by two above
 
     if norm:
-        net_pat /= np.sqrt(2 * len(network))
+        net_pat /= np.sqrt(2) # * len(network))
 
     return ra_grid, dec_grid, net_pat, net_align, net_dpf
 

@@ -23,6 +23,8 @@ from skyutils import *
 def get_event_num(fname):
     import re
     m = re.findall("([0-9]+)", fname)
+    #print fname
+    #print m
     return int(m[-1])
 
 def load_injections(fname):
@@ -94,10 +96,12 @@ argp.add_argument("-o", "--overplot", default=None, help="Overplot a function of
 argp.add_argument("-i", "--inj-xml", default=None, help="Path to the injection XML file.")
 argp.add_argument("-p", "--pathspecs", action="append", help="Add file glob paths to be parsed in the following way: \"(name)=(globspec)\", e.g. \"HLV=/path/to/skymaps/*/post/*\"")
 argp.add_argument("-c", "--colorspecs", action="append", help="Add color specs to be parsed in the following way: \"(name)=(colorspec)\", e.g. \"HLV=yellow\" or \"HKLV=snr,viridis\"")
+argp.add_argument("-x", "--configuration", default=None, help="Choices are HLV, HLKV")
 args = argp.parse_args()
 
 network = args.network
-print "Will use network of %s" % ", ".join(network)
+configuration =  args.configuration
+#print "Will use network of %s" % ", ".join(network)
 
 np.seterr(under='ignore')
 
@@ -200,25 +204,25 @@ elif args.overplot == "align":
 #
 if args.inj_xml is not None:
     inj = load_injections(args.inj_xml)
-    print "Loaded %d injections" % len(inj)
+    #print "Loaded %d injections" % len(inj)
 
 cspecs = parse_colorspecs(args.colorspecs)
-for label, cmap in cspecs.iteritems():
-    print label + " => " + str(cmap)
+#for label, cmap in cspecs.iteritems():
+    #print label + " => " + str(cmap)
 
 config_information = defaultdict(list)
 pspecs = parse_pathspecs(args.pathspecs)
 for label, globpat in pspecs.iteritems():
 
-    print label + " => " + globpat
+    #print label + " => " + globpat
 
     files = glob.glob(globpat)
-    print "Globbed %d files for pattern %s" % (len(files), globpat)
+    #print "Globbed %d files for pattern %s" % (len(files), globpat)
 
     plt.figure(0)
-    for filename in files: #[:3]:  # Change this to run faster
+    for filename in files: #[:8]:  # Change this to run faster
         enum = get_event_num(filename)
-        print "Processing event %d" % enum
+        #print "Processing event %d" % enum
 
         #
         # Generate vital statistics
@@ -235,17 +239,31 @@ for label, globpat in pspecs.iteritems():
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
         # Reject regions which would pollute the plot
-        if prb68 * pix_size > 64:
-            print prb68 * pix_size
-            print "Skipping event %d, region too large... not converged?" % enum
+        #if prb68 * pix_size > 64:
+            #print prb68 * pix_size
+            #print "Skipping event %d, region too large... not converged?" % enum
             #continue
-        snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
-        with open(snr, "r") as snrf:
-            snrs = dict([map(str.strip, l.split(":")) for l in snrf.readlines()])
-        for k in snrs:
-            snrs[k] = float(snrs[k])
-        print snrs
-        print snrs["Network"]
+        #snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
+
+
+        if configuration == "HLV":
+            snr = "/projects/b1011/spinning_runs/freezingparams_20160402_IMR/" + str(enum)  + "/none/snr.txt"
+        elif configuration == "HLKV":
+            snr = "/projects/b1011/kagra/kagra_o2_lalinference/" + str(enum)  + "/snr.txt"
+
+        #print snr
+        try:
+            with open(snr, "r") as snrf:
+                snrs = dict([map(str.strip, l.split(":")) for l in snrf.readlines()])
+            for k in snrs:
+                snrs[k] = float(snrs[k])
+            #print snrs
+        except IOError:
+            snrs_new = {}
+            snrs_new["Network"] = 1.0
+            snrs = snrs_new
+
+        #print snrs["Network"]
 
         if True:
             cmap = cspecs[label]
@@ -256,7 +274,7 @@ for label, globpat in pspecs.iteritems():
 
             cache_fname = filename.replace("fits.gz", "intrp.npz")
             if os.path.exists(cache_fname):
-                print "Loading cached interpolated map: %s" % cache_fname
+                #print "Loading cached interpolated map: %s" % cache_fname
                 ra_int, dec_int, prob_int = dict(np.load(cache_fname))["arr_0"]
             else:
                 ra_int, dec_int, prob_int = interpolate_healpix_map(sky_data["ra"],
@@ -327,21 +345,23 @@ for label, config in config_information.iteritems():
     #ax1.tick_params(top='off', bottom='on', left='on', right='off')
     ax1.set_xlabel('Error Region (squared degrees)')
     ax1.set_ylabel('Network Antenna Pattern')
-    ax1.set_xlim(0, None)
+    ax1.set_xlim(1e-1, 1e5)
+    ax1.set_ylim(0, 1)
+    ax1.set_xscale('log')
 
     # Histogram of Error Regions
-    ax2.hist(err_reg, color='gray', histtype='stepfilled')
+    ax2.hist(err_reg, color='gray', histtype='stepfilled', bins=np.logspace(-1, 5, 20))
     ax2.tick_params(axis='x', top='on', bottom='on', labelbottom='off', labeltop='off')
     ax2.set_ylabel('Count')
     nbins = len(ax1.get_xticklabels())
-    ax2.yaxis.set_major_locator(MaxNLocator(nbins=nbins, prune='lower'))
+    ax2.yaxis.set_major_locator(MaxNLocator(nbins=nbins, prune='lower', integer=True))
 
     # Histogram of SNRs
     ax3.hist(antenna_pattern, color='gray', histtype='stepfilled', orientation='horizontal')
     ax3.tick_params('y', left='on', right='on', labelleft='off', labelright='off')
     ax3.set_xlabel('Count')
     #nbins = len(ax3.get_xticklabels())
-    #ax3.yaxis.set_major_locator(MaxNLocator(nbins=nbins, prune='lower'))
+    ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
     xticks = ax3.xaxis.get_major_ticks()
     xticks[0].label1.set_visible(False)
 
@@ -350,7 +370,7 @@ for label, config in config_information.iteritems():
 
     #ax1.xlabel('Error Region (squared degrees)')
     #ax1.ylabel('Network SNR')
-    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for ' + str(label))
+    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for %s' % configuration)
     #plt.subplots_adjust(right=0.8)
     #cbar_ax = plt.add_axes([0.85, 0.15, 0.05, 0.7])
     cbar = plt.colorbar(scatter, label='Network SNR')
@@ -360,7 +380,7 @@ for label, config in config_information.iteritems():
     #ax1.grid()
     #plt.step(err_reg[0], yaxis, label=label)
 
-plt.savefig("snr_vs_err_%s.png" % str(label))
+plt.savefig("snr_vs_err_%s.png" % configuration)
 
 
 if False:
