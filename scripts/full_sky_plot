@@ -251,17 +251,16 @@ for label, globpat in pspecs.iteritems():
             #continue
         error_regions[label].append(prb68 * pix_size)
 
-        snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
-        with open(snr, "r") as snrf:
-            snrs = dict([map(str.strip, l.split(":")) for l in snrf.readlines()])
-        for k in snrs:
-            snrs[k] = float(snrs[k])
-        print snrs
-
         cmap = cspecs[label]
         if cmap.quant == "error_region":
             linecolor = cmap(prb68 * pix_size)
         elif cmap.quant == "snr":
+            snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
+            with open(snr, "r") as snrf:
+                snrs = dict([map(str.strip, l.split(":")) for l in snrf.readlines()])
+            for k in snrs:
+                snrs[k] = float(snrs[k])
+            print snrs
             linecolor = cmap(snrs["Network"])
 
         cache_fname = filename.replace("fits.gz", "intrp.npz")
@@ -321,4 +320,5 @@ plt.figure(1)
 for label, err_reg in error_regions.iteritems():
     yaxis = np.linspace(0, 1, len(err_reg))
     plt.step(sorted(err_reg), yaxis, label=label)
+plt.legend(loc="lower right")
 plt.savefig(error_region_file)
