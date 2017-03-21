@@ -86,7 +86,7 @@ def net_antenna_pattern(gpstime, network, psi=0, npts=100, norm=False):
     net_dpf = net_dpf.reshape(ra_grid.shape) / 2 # we multiplied by two above
 
     if norm:
-        net_pat /= np.sqrt(2)  # * len(network))
+        net_pat /= np.sqrt(2) #* len(network)
 
     return ra_grid, dec_grid, net_pat, net_align, net_dpf
 
@@ -101,19 +101,15 @@ def net_antenna_pattern_point(gpstime, network, ra_rad, de_rad, psi=0, npts=100,
     gps = LIGOTimeGPS(gpstime)
     gmst_rad = GreenwichMeanSiderealTime(gps)
 
-    ra_grid, dec_grid = _sph_grid(npts)
-
-    net_pat = np.zeros(ra_grid.shape[0]*ra_grid.shape[1])
-
-    net_align = np.zeros(ra_grid.shape[0]*ra_grid.shape[1])
-    net_dpf = np.zeros(ra_grid.shape[0]*ra_grid.shape[1])
-
     psi_rad = 0
     #i = 0
 
-    #import pdb; pdb.set_trace()
     fp = [ComputeDetAMResponse(detectors[ifo].response, ra_rad, de_rad, psi_rad, gmst_rad)[0] for ifo in network]
     fx = [ComputeDetAMResponse(detectors[ifo].response, ra_rad, de_rad, psi_rad, gmst_rad)[1] for ifo in network]
+    #print network
+    #for ifo in network:
+    #    print ifo, ComputeDetAMResponse(detectors[ifo].response, ra_rad, de_rad, psi_rad, gmst_rad)[0]
+
     fp = np.asarray(fp)
     fx = np.asarray(fx)
     fp2, fx2 = np.dot(fp, fp), np.dot(fx, fx)
@@ -126,18 +122,14 @@ def net_antenna_pattern_point(gpstime, network, ra_rad, de_rad, psi=0, npts=100,
     net_pat = np.sqrt(fp2 + fx2)
     net_align = np.sqrt(fx2 / fp2)
 
-
-    ra_grid *= 180/np.pi
-    dec_grid *= 180/np.pi
-
     #net_pat = net_pat.reshape(ra_grid.shape)
     #net_align = net_align.reshape(ra_grid.shape)
     #net_dpf = net_dpf.reshape(ra_grid.shape) / 2 # we multiplied by two above
 
     if norm:
-        net_pat /= np.sqrt(2) # * len(network))
+        net_pat /= np.sqrt(2) #* len(network)
 
-    return ra_grid, dec_grid, net_pat, net_align, net_dpf
+    return net_pat, net_align, net_dpf
 
 
 
