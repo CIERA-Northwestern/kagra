@@ -87,7 +87,8 @@ def parse_colorspecs(pspecs):
     return out
 
 _antenna_functions = ("network", "alignment", "dpf")
-_network = ("H1", "K1", "L1", "V1")
+#_network = ("H1", "K1", "L1", "V1")
+_network = "H1 K1 L1 V1"
 
 argp = ArgumentParser()
 argp.add_argument("-n", "--network", default=_network, help="Network of instruments to use for antenna based calculations. Default is %s" % ", ".join(_network))
@@ -96,10 +97,10 @@ argp.add_argument("-o", "--overplot", default=None, help="Overplot a function of
 argp.add_argument("-i", "--inj-xml", default=None, help="Path to the injection XML file.")
 argp.add_argument("-p", "--pathspecs", action="append", help="Add file glob paths to be parsed in the following way: \"(name)=(globspec)\", e.g. \"HLV=/path/to/skymaps/*/post/*\"")
 argp.add_argument("-c", "--colorspecs", action="append", help="Add color specs to be parsed in the following way: \"(name)=(colorspec)\", e.g. \"HLV=yellow\" or \"HKLV=snr,viridis\"")
-argp.add_argument("-x", "--configuration", default=None, help="Choices are HLV, HLKV")
+argp.add_argument("-x", "--configuration", default=None, help="Choices are HLV, HKLV, HIKLV")
 args = argp.parse_args()
 
-network = args.network
+network = args.network.split()
 configuration =  args.configuration
 #print "Will use network of %s" % ", ".join(network)
 
@@ -121,7 +122,7 @@ m.drawmapboundary()
 # Arbitrary midnight UTC
 gpstime = 1e9 - (1e9 % (3600 * 24))
 ra_grid, dec_grid, net_pat, net_align, dpf = \
-    net_antenna_pattern(gpstime, network)
+    net_antenna_pattern(gpstime, network, norm=True)
 #print np.max(net_pat), np.max(net_align)
 
 
@@ -172,7 +173,7 @@ elif args.underplot == "align":
 #
 if False:
     gr_ra_grid, gr_dec_grid, gr_net_pat, _, _ = \
-        net_antenna_pattern(gpstime, network, npts=20)
+        net_antenna_pattern(gpstime, network, npts=20, norm=True)
 
     gr_ra_grid -= 180
     gr_dec_grid *= -1
@@ -211,6 +212,7 @@ cspecs = parse_colorspecs(args.colorspecs)
     #print label + " => " + str(cmap)
 
 config_information = defaultdict(list)
+outliers = []
 pspecs = parse_pathspecs(args.pathspecs)
 for label, globpat in pspecs.iteritems():
 
@@ -220,7 +222,7 @@ for label, globpat in pspecs.iteritems():
     #print "Globbed %d files for pattern %s" % (len(files), globpat)
 
     plt.figure(0)
-    for filename in files: #[:8]:  # Change this to run faster
+    for filename in files: #[:3]:  # Change this to run faster
         enum = get_event_num(filename)
         #print "Processing event %d" % enum
 
@@ -238,18 +240,22 @@ for label, globpat in pspecs.iteritems():
         prb95 = np.searchsorted(sky_data["cumul"], 0.95)
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
-        # Reject regions which would pollute the plot
-        #if prb68 * pix_size > 64:
-            #print prb68 * pix_size
-            #print "Skipping event %d, region too large... not converged?" % enum
-            #continue
-        #snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
+        # Identify outliers
+        if prb68 * pix_size > 1e3:
+            print prb68 * pix_size
+            outliers.append((configuration, enum, prb68*pix_size))
 
+            #print "Skipping event %d, region too large... not converged?" % enum
+
+        #snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
 
         if configuration == "HLV":
             snr = "/projects/b1011/spinning_runs/freezingparams_20160402_IMR/" + str(enum)  + "/none/snr.txt"
-        elif configuration == "HLKV":
+        elif configuration == "HKLV":
             snr = "/projects/b1011/kagra/kagra_o2_lalinference/" + str(enum)  + "/snr.txt"
+        elif configuration == "HIKLV":
+            snr = "/projects/b1011/kagra/HLVKI/" + str(enum) + "/snr.txt"
+
 
         #print snr
         try:
@@ -300,32 +306,29 @@ for label, globpat in pspecs.iteritems():
 
             m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
 
-            # Find where prob_int is the highest
-            max_indices = np.unravel_index(np.argmax(prob_int), prob_int.shape)
-
-            # Find this location in ra and dec
-            ra_max = ra_int[max_indices]
-            dec_max = dec_int[max_indices]
-
-            # Find closest values in ra_grid and dec_grid
-            #index_ra =  np.unravel_index(np.argmin(np.abs(ra_grid - ra_max)), ra_grid.shape)
-            #index_dec =  np.unravel_index(np.argmin(np.abs(dec_grid - dec_max)), dec_grid.shape)
-
-
-            # Find related net_pat value at that index
-            # FIXME: I am only using the network pattern value corresponding to the ra, while ignoring dec
-            #antenna_pattern = net_pat[index_ra]
-            #config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern])
-
             # Use gpstime of this injection to find the network antenna pattern at that time at this ra and dec
-            antenna_pattern = net_antenna_pattern_point(gmst, network, ra_max, dec_max, norm=True)[3]
+            #import pdb; pdb.set_trace()
+
+            print 'IN SCATTER:' + str(network)
+            antenna_pattern = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude, norm=True)[0]
             config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern])
 
             # Debuggin
             #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
 
         # FIXME: temporary
-        plt.savefig("test_map.png")
+        plt.savefig("figures/test_map.png")
+
+filename = 'outliers_%s' % configuration
+outlier_file = open(filename, 'w')
+for run in outliers:
+    outlier_file.write('Event number: ' + str(run[1]) + ', Error Region (sq. deg.): ' + str(run[2]))
+    outlier_file.write('\n')
+
+
+#outlier_file.write(outliers)
+outlier_file.close()
+print outliers
 
 plt.figure(1)
 gs = gridspec.GridSpec(3, 3)
@@ -334,11 +337,19 @@ ax1 = plt.subplot(gs[1:, :-1])
 ax2 = plt.subplot(gs[0, :-1], sharex=ax1)
 ax3 = plt.subplot(gs[1:, 2], sharey=ax1)
 
+filename = 'err_snr_antenna_%s' % configuration
+plot_data = open(filename, 'w')
+
+
 for label, config in config_information.iteritems():
     config = np.asarray(config)
     err_reg = config[:, 0]
     snr = config[:, 1]
     antenna_pattern = config[:, 2]
+
+    for value in config:
+        plot_data.write(str(value[0]) + ' ' + str(value[1]) + ' ' + str(value[2]))
+        plot_data.write('\n')
 
     # Scatter plot of SNR vs. Error Regions
     scatter = ax1.scatter(err_reg, antenna_pattern, c=snr, edgecolors='None', label=label, cmap='viridis')
@@ -346,7 +357,7 @@ for label, config in config_information.iteritems():
     ax1.set_xlabel('Error Region (squared degrees)')
     ax1.set_ylabel('Network Antenna Pattern')
     ax1.set_xlim(1e-1, 1e5)
-    ax1.set_ylim(0, 1)
+    ax1.set_ylim(0, 4)
     ax1.set_xscale('log')
 
     # Histogram of Error Regions
@@ -380,8 +391,8 @@ for label, config in config_information.iteritems():
     #ax1.grid()
     #plt.step(err_reg[0], yaxis, label=label)
 
-plt.savefig("snr_vs_err_%s.png" % configuration)
-
+plt.savefig("figures/snr_vs_err_%s.png" % configuration)
+plot_data.close()
 
 if False:
     # Set up colorbars
@@ -396,4 +407,4 @@ if False:
                 label = r"Network SNR"
             colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
 
-    plt.savefig("test_cmap.png")
+    plt.savefig("figures/test_cmap.png")
