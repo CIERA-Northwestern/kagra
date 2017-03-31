@@ -19,6 +19,7 @@
 * Event 775: SNR
 * Event 824
 * Event 843
+* [Event 901](https://ldas-jobs.ligo.caltech.edu/~eve.chase/kagra/outliers/901/): high spin; only recovered by HIKLV; no SNR problems
 * Event 946
 
 
@@ -27,7 +28,5 @@
 * Event 346: SNR
 * Event 843: SNR
 * Event 876: SNR
-* [Event 901](https://ldas-jobs.ligo.caltech.edu/~eve.chase/kagra/outliers/901/): high spin; only recovered by HIKLV; no SNR problems
-
 
 
