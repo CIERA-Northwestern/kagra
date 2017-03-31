@@ -4,6 +4,7 @@ import glob
 import os
 from collections import defaultdict
 from argparse import ArgumentParser
+import operator
 
 import numpy as np
 
@@ -222,7 +223,7 @@ for label, globpat in pspecs.iteritems():
     #print "Globbed %d files for pattern %s" % (len(files), globpat)
 
     plt.figure(0)
-    for filename in files: #[:3]:  # Change this to run faster
+    for filename in files: #[:10]:  # Change this to run faster
         enum = get_event_num(filename)
         #print "Processing event %d" % enum
 
@@ -241,13 +242,9 @@ for label, globpat in pspecs.iteritems():
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
         # Identify outliers
-        if prb68 * pix_size > 1e3:
-            print prb68 * pix_size
-            outliers.append((configuration, enum, prb68*pix_size))
-
-            #print "Skipping event %d, region too large... not converged?" % enum
-
-        #snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
+        #if prb68 * pix_size > 1e3:
+        #    print prb68 * pix_size
+        #    outliers.append((configuration, enum, prb68*pix_size))
 
         if configuration == "HLV":
             snr = "/projects/b1011/spinning_runs/freezingparams_20160402_IMR/" + str(enum)  + "/none/snr.txt"
@@ -264,6 +261,26 @@ for label, globpat in pspecs.iteritems():
             for k in snrs:
                 snrs[k] = float(snrs[k])
             #print snrs
+            # Make a dictionary without the Network value
+            snrs_reduced = dict(snrs)
+            del snrs_reduced['Network']
+
+            # Remove the detector with the highest SNR
+            detector_high_snr = sorted(snrs_reduced.iteritems(), key=operator.itemgetter(1))[-1][0]
+            del snrs_reduced[detector_high_snr]
+
+            # Find the detector with the second-highest SNR
+            detector_second_snr = sorted(snrs_reduced.iteritems(), key=operator.itemgetter(1))[-2][0]
+            # FIXME: change the threshold to be 5.5 and also check that the new dict sorting is working
+            # Check value of second-highest SNR
+            if snrs[detector_second_snr] < 5.0:
+               #outliers.append((configuration, enum, snrs[detector_second_snr]))
+                outliers.append(enum)
+
+            # Add the special case, 901, to the outlier list
+            if enum == 901:
+                outliers.append(enum)
+
         except IOError:
             snrs_new = {}
             snrs_new["Network"] = 1.0
@@ -273,7 +290,7 @@ for label, globpat in pspecs.iteritems():
 
         if True:
             cmap = cspecs[label]
-            if cmap.quant == "error_region":
+            if cmap.quant == "error_regior":
                 linecolor = cmap(prb68 * pix_size)
             elif cmap.quant == "snr":
                 linecolor = cmap(snrs["Network"])
@@ -307,11 +324,8 @@ for label, globpat in pspecs.iteritems():
             m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
 
             # Use gpstime of this injection to find the network antenna pattern at that time at this ra and dec
-            #import pdb; pdb.set_trace()
-
-            print 'IN SCATTER:' + str(network)
             antenna_pattern = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude, norm=True)[0]
-            config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern])
+            config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern, enum])
 
             # Debuggin
             #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
@@ -322,9 +336,10 @@ for label, globpat in pspecs.iteritems():
 filename = 'outliers_%s' % configuration
 outlier_file = open(filename, 'w')
 for run in outliers:
-    outlier_file.write('Event number: ' + str(run[1]) + ', Error Region (sq. deg.): ' + str(run[2]))
+    #outlier_file.write('Event number: ' + str(run[1]) + ', Second-Highest SNR: ' + str(run[2]))
+    #outlier_file.write('\n')
+    outlier_file.write(str(run))
     outlier_file.write('\n')
-
 
 #outlier_file.write(outliers)
 outlier_file.close()
@@ -348,7 +363,7 @@ for label, config in config_information.iteritems():
     antenna_pattern = config[:, 2]
 
     for value in config:
-        plot_data.write(str(value[0]) + ' ' + str(value[1]) + ' ' + str(value[2]))
+        plot_data.write(str(value[0]) + ' ' + str(value[1]) + ' ' + str(value[2]) + ' ' + str(int(value[3])))
         plot_data.write('\n')
 
     # Scatter plot of SNR vs. Error Regions
