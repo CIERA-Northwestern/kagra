@@ -95,7 +95,14 @@ argp.add_argument("-p", "--pathspecs", action="append", help="Add file glob path
 argp.add_argument("-c", "--colorspecs", action="append", help="Add color specs to be parsed in the following way: \"(name)=(colorspec)\", e.g. \"HLV=yellow\" or \"HKLV=snr,viridis\"")
 argp.add_argument("-f", "--file-stem", help="File stem for plotting output.")
 #argp.add_argument("-l", "--runlabels", action="store_true", help="Annotate each area with its run label.")
+argp.add_argument("-b", "--black-list", help="Skip events listed in this file.")
 args = argp.parse_args()
+
+if args.black_list is not None:
+    with open(args.black_list, "r") as bl:
+        blacklist = set(map(int, filter(lambda l: "#" != l[0], bl.readlines())))
+else:
+    blacklist = set()
 
 network = args.network
 print "Will use network of %s" % ", ".join(network)
@@ -222,6 +229,9 @@ for label, globpat in pspecs.iteritems():
     for filename in files:
         enum = get_event_num(filename)
         print "Processing event %d" % enum
+        if enum in blacklist:
+            print "Event %d is listed in the black list, skipping." % enum
+            continue
 
         #
         # Generate vital statistics
@@ -244,11 +254,6 @@ for label, globpat in pspecs.iteritems():
         prb95 = np.searchsorted(sky_data["cumul"], 0.95)
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
-        # Reject regions which would pollute the plot
-        if prb68 * pix_size > 64:
-            print prb68 * pix_size
-            print "Skipping event %d, region too large... not converged?" % enum
-            #continue
         error_regions[label].append(prb68 * pix_size)
 
         cmap = cspecs[label]
