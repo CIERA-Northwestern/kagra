@@ -25,8 +25,4 @@
 
 
 ## Potential Blacklist Candidates
-* Event 346: SNR
-* Event 843: SNR
-* Event 876: SNR
-
-
+* Event 404
