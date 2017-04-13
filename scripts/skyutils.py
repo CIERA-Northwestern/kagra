@@ -75,7 +75,7 @@ def solid_angle_error(source_pos, network_timing):
         r_2 = baseline(det_comb[3], det_comb[2])
         det_plane = np.cross(r_1, r_2)
         # FIXME: Bad, don't know why
-        det_plane *= -1
+        det_plane[-1] *= -1
         del_omega_inv_sq += np.prod(timing)**-2 * np.dot(det_plane, np.swapaxes(source_vec, 1, 0))**2
     timing_sum = np.sum(1. / np.power(network_timing.values(), 2))
 
@@ -99,7 +99,7 @@ def delay_to_plane(source_pos, network_timing):
         det_plane = np.cross(r_1, r_2)
         det_plane /= np.sqrt(np.dot(det_plane, det_plane))
         # TODO: Bad, don't know why
-        det_plane *= -1
+        det_plane[-1] *= -1
         ip = []
         _tmp = np.asarray(source_pos).reshape(2, -1)
         for i, vec in enumerate(source_vec.reshape(3, -1).T):
