@@ -67,6 +67,7 @@ scatter_shape = ['o', '+', 's']
 colors_options = ['gray', 'cyan', 'white']
 colors_stats = ['black', 'blue', 'red']
 
+
 for runs in runs_to_plot:
 
     #print runs[0, :]
@@ -79,6 +80,17 @@ for runs in runs_to_plot:
     statistics_color = colors_stats.pop(0)
     label = names.pop(0)
 
+    # Find points that aren't outliers for histograms
+    err_reg_noout = []
+    antenna_pattern_noout = []
+
+    # FIXME: list comprehension
+    for index, enum in enumerate(run_numbers):
+        if enum not in outlier_list:
+            err_reg_noout.append(err_reg[index])
+            antenna_pattern_noout.append(antenna_pattern[index])
+
+
 
     #Scatter plot of SNR vs. Error Regions
     if label == scatter_config:
@@ -86,32 +98,19 @@ for runs in runs_to_plot:
         norm = colors.Normalize(vmin=min(snr), vmax=max(snr))
         smap = mpl_cm.ScalarMappable(norm=norm, cmap=plt.get_cmap("viridis"))
 
-
-
-
         nonoutlier_marker = scatter_shape.pop(0)
         outlier_marker = scatter_shape.pop(0)
         for index, enum in enumerate(run_numbers):
             if enum in outlier_list:
                 marker = outlier_marker
-            elif err_reg[index] > 1000:
-                print str(int(enum)) + ' has an error region of ' + str(err_reg[index]) + ' and is not on the blacklist'
-                print runs[index, :]
-                marker = 's'
+            #elif err_reg[index] > 1000:
+            #    print str(int(enum)) + ' has an error region of ' + str(err_reg[index]) + ' and is not on the blacklist'
+            #    print runs[index, :]
+            #    marker = 's'
             else:
                 marker = nonoutlier_marker
             scatter = ax1.scatter(err_reg[index], antenna_pattern[index], marker=marker, c=smap.to_rgba(snr[index]), edgecolors='None', cmap='viridis')
 
-
-
-
-#            if enum in outlier_list:
-#                #print enum
-#                scatter = ax1.scatter(err_reg[index], antenna_pattern[index], marker=outlier_marker, c=snr[index], edgecolors='None')
-#            elif err_reg[index] >= 1e5:
-#                print enum
-#            else:
-#                scatter = ax1.scatter(err_reg[index], antenna_pattern[index], marker=marker, c=snr[index], edgecolors='None', cmap='viridis')
         ax1.set_xlabel('Error Region (squared degrees)')
         ax1.set_ylabel('Network Antenna Pattern')
         ax1.set_xlim(1e-1, 1e5)
@@ -119,16 +118,16 @@ for runs in runs_to_plot:
         ax1.set_xscale('log')
 
     # Histogram of Error Regions
-    ax2.hist(err_reg, color=hist_color, histtype='stepfilled', bins=np.logspace(-1, 5, 20), alpha=0.5, label=label)
+    ax2.hist(err_reg_noout, color=hist_color, histtype='stepfilled', bins=np.logspace(-1, 5, 20), alpha=0.5, label=label)
     ax2.tick_params(axis='x', top='on', bottom='on', labelbottom='off', labeltop='off')
     ax2.set_ylabel('Count')
     nbins = len(ax1.get_xticklabels())
     ax2.yaxis.set_major_locator(MaxNLocator(nbins=nbins, prune='lower', integer=True))
 
     # Find the median and 90% interval of Error Region histograms
-    err_med = np.percentile(err_reg, 50)
-    err_95 = np.percentile(err_reg, 95)
-    err_5 = np.percentile(err_reg, 5)
+    err_med = np.percentile(err_reg_noout, 50)
+    err_95 = np.percentile(err_reg_noout, 95)
+    err_5 = np.percentile(err_reg_noout, 5)
     ax2.axvline(x=err_med, color=statistics_color, linewidth=2)
     ax2.axvline(x=err_95, color=statistics_color, linewidth=2, ls='-.')
     ax2.axvline(x=err_5, color=statistics_color, linewidth=2, ls='-.')
@@ -149,9 +148,9 @@ for runs in runs_to_plot:
     #ax3.axhline(y=(net_mean + net_stdev), color=statistics_color, linewidth=2, ls='dashed')
     #ax3.axhline(y=(net_mean - net_stdev), color=statistics_color, linewidth=2, ls='dashed')
 
-    net_med = np.percentile(antenna_pattern, 50)
-    net_95 = np.percentile(antenna_pattern, 95)
-    net_5 = np.percentile(antenna_pattern, 5)
+    net_med = np.percentile(antenna_pattern_noout, 50)
+    net_95 = np.percentile(antenna_pattern_noout, 95)
+    net_5 = np.percentile(antenna_pattern_noout, 5)
     ax3.axhline(y=net_med, color=statistics_color, linewidth=2, label=(label + ' Median'))
     ax3.axhline(y=net_95, color=statistics_color, linewidth=2, ls='-.', label=(label + ' 90% Conf.'))
     ax3.axhline(y=net_5, color=statistics_color, linewidth=2, ls='-.')

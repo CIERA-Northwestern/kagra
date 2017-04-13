@@ -264,19 +264,21 @@ for label, globpat in pspecs.iteritems():
             # Make a dictionary without the Network value
             snrs_reduced = dict(snrs)
             del snrs_reduced['Network']
+            print snrs_reduced
 
             # Remove the detector with the highest SNR
             detector_high_snr = sorted(snrs_reduced.iteritems(), key=operator.itemgetter(1))[-1][0]
             del snrs_reduced[detector_high_snr]
+            print snrs_reduced
 
             # Find the detector with the second-highest SNR
-            detector_second_snr = sorted(snrs_reduced.iteritems(), key=operator.itemgetter(1))[-2][0]
+            detector_second_snr = sorted(snrs_reduced.iteritems(), key=operator.itemgetter(1))[-1][0]
             # FIXME: change the threshold to be 5.5 and also check that the new dict sorting is working
             # Check value of second-highest SNR
             if snrs[detector_second_snr] < 5.0:
-               #outliers.append((configuration, enum, snrs[detector_second_snr]))
+                #outliers.append((configuration, enum, snrs[detector_second_snr]))
                 outliers.append(enum)
-
+                print snrs
             # Add the special case, 901, to the outlier list
             if enum == 901:
                 outliers.append(enum)
@@ -288,7 +290,7 @@ for label, globpat in pspecs.iteritems():
 
         #print snrs["Network"]
 
-        if True:
+        if False:
             cmap = cspecs[label]
             if cmap.quant == "error_regior":
                 linecolor = cmap(prb68 * pix_size)
@@ -323,9 +325,9 @@ for label, globpat in pspecs.iteritems():
 
             m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
 
-            # Use gpstime of this injection to find the network antenna pattern at that time at this ra and dec
-            antenna_pattern = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude, norm=True)[0]
-            config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern, enum])
+        # Use gpstime of this injection to find the network antenna pattern at that time at this ra and dec
+        antenna_pattern = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude, norm=True)[0]
+        config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern, enum])
 
             # Debuggin
             #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
