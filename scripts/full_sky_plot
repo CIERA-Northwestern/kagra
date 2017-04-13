@@ -83,7 +83,7 @@ def parse_colorspecs(pspecs):
             out[label] = Plottable(cmap)
     return out
 
-_antenna_functions = ("network", "alignment", "dpf")
+_antenna_functions = ("network", "alignment", "dpf", "error_reg")
 _network = ("H1", "K1", "L1", "V1")
 
 argp = ArgumentParser()
@@ -104,7 +104,10 @@ if args.black_list is not None:
 else:
     blacklist = set()
 
-network = args.network
+if not isinstance(args.network, tuple):
+    network = args.network.split(" ")
+else:
+    network = _network
 print "Will use network of %s" % ", ".join(network)
 
 np.seterr(under='ignore')
@@ -127,6 +130,10 @@ gpstime = 1e9 - (1e9 % (3600 * 24))
 ra_grid, dec_grid, net_pat, net_align, dpf = \
     net_antenna_pattern(gpstime, network)
 #print np.max(net_pat), np.max(net_align)
+
+# FIXME: hardcoded
+timing = get_timing_dict(snr=12, dets=network)
+err_reg = solid_angle_error((ra_grid * np.pi / 180, dec_grid * np.pi / 180), timing)
 
 # FIXME: Still getting warnings, not sure how this is supposed to work.
 #net_pat, ra_grid = basemap.shiftgrid(180, net_pat.flatten(), ra_grid.flatten(), start=False)
@@ -167,9 +174,14 @@ elif args.underplot == "dpf":
                 vmin=-np.pi/4, vmax=np.pi/4)
     #plt.savefig("net_dpf.png")
 
-elif args.underplot == "align":
+elif args.underplot == "alignment":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
     #plt.savefig("net_align.png")
+
+elif args.underplot == "error_reg":
+    m.contourf(ra_grid, dec_grid, np.log10(err_reg * 180 * 90 / np.pi), 1000, cmap=matplotlib.cm.bone_r)
+    m.colorbar()
+    plt.savefig("%s_err_reg.png" % "".join([d[0].lower() for d in sorted(network)]))
 
 #
 # Gradient plots disabled for now
@@ -198,7 +210,7 @@ elif args.overplot == "dpf":
                 vmin=-np.pi/4, vmax=np.pi/4)
     #plt.savefig("net_dpf.png")
 
-elif args.overplot == "align":
+elif args.overplot == "alignment":
     m.contour(ra_grid, dec_grid, net_align, 10, cmap=matplotlib.cm.cool,
                 vmin=0, vmax=1)
     #plt.savefig("net_align.png")
@@ -232,6 +244,7 @@ for label, globpat in pspecs.iteritems():
         if enum in blacklist:
             print "Event %d is listed in the black list, skipping." % enum
             continue
+        print filename
 
         #
         # Generate vital statistics
@@ -255,6 +268,7 @@ for label, globpat in pspecs.iteritems():
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
         error_regions[label].append(prb68 * pix_size)
+        assert error_regions[label][-1] < 1e3
 
         cmap = cspecs[label]
         if cmap.quant == "error_region":
@@ -299,7 +313,7 @@ for label, globpat in pspecs.iteritems():
         #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
 
         # FIXME: temporary
-        plt.savefig(plot_file)
+        #plt.savefig(plot_file)
 
 # Set up colorbars
 for label, cmap in cspecs.iteritems():
