@@ -181,7 +181,6 @@ elif args.underplot == "alignment":
 elif args.underplot == "error_reg":
     m.contourf(ra_grid, dec_grid, np.log10(err_reg * 180 * 90 / np.pi), 1000, cmap=matplotlib.cm.bone_r)
     m.colorbar()
-    plt.savefig("%s_err_reg.png" % "".join([d[0].lower() for d in sorted(network)]))
 
 #
 # Gradient plots disabled for now
