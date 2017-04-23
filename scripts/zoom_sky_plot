@@ -188,7 +188,7 @@ cspecs = parse_colorspecs(args.colorspecs)
 for label, cmap in cspecs.iteritems():
     print label + " => " + str(cmap)
 
-error_regions = defaultdict(list)
+error_regions = defaultdict(dict)
 pspecs = parse_pathspecs(args.pathspecs)
 n_nets = len(pspecs)
 plt.figure(0)
@@ -302,8 +302,8 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
             prb95 = np.searchsorted(sky_data["cumul"], 0.95)
             prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
-            error_regions[label].append(prb68 * pix_size)
-            assert error_regions[label][-1] < 1e3
+            error_regions[label][key + "_" + str(enum)] = prb68 * pix_size
+            assert prb68 * pix_size < 1e3
 
             cmap = cspecs[label]
             if cmap.quant == "error_region":
@@ -373,8 +373,9 @@ with open(error_region_file, "w") as fout:
 
 error_region_file = args.file_stem + "_error_regions.png"
 plt.figure(1)
-for label, err_reg in error_regions.iteritems():
+for label, err_reg_dict in error_regions.iteritems():
+    err_reg = sorted(err_reg_dict.values())
     yaxis = np.linspace(0, 1, len(err_reg))
-    plt.step(sorted(err_reg), yaxis, label=label)
+    plt.step(err_reg, yaxis, label=label)
 plt.legend(loc="lower right")
 plt.savefig(error_region_file)
