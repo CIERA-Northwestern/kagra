@@ -263,15 +263,15 @@ for label, globpat in pspecs.iteritems():
         pix_size = healpy.nside2pixarea(ns, degrees=True)
 
         prb68 = np.searchsorted(sky_data["cumul"], 0.68)
-        prb95 = np.searchsorted(sky_data["cumul"], 0.95)
+        prb90 = np.searchsorted(sky_data["cumul"], 0.90)
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
-        error_regions[label].append(prb68 * pix_size)
+        error_regions[label].append(prb90 * pix_size)
         assert error_regions[label][-1] < 1e3
 
         cmap = cspecs[label]
         if cmap.quant == "error_region":
-            linecolor = cmap(prb68 * pix_size)
+            linecolor = cmap(prb90 * pix_size)
         elif cmap.quant == "snr":
             snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
             with open(snr, "r") as snrf:
@@ -307,7 +307,7 @@ for label, globpat in pspecs.iteritems():
 
         ra_int, dec_int = m(ra_int, dec_int)
 
-        m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
+        m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb90]], colors=(linecolor,), linewidths=0.5)
         # Debuggin
         #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
 
@@ -321,7 +321,7 @@ for label, cmap in cspecs.iteritems():
         cb = colorbar.ColorbarBase(cax,
             cmap=cmap.colors, norm=cmap._norm, orientation='horizontal')
         if cmap.quant == "error_region":
-            label = r"Solid Angle $(deg)^2$ Area of $68\%$ Credible Region"
+            label = r"Solid Angle $(deg)^2$ Area of $90\%$ Credible Region"
         elif cmap.quant == "snr":
             label = r"Network SNR"
         colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
