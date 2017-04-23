@@ -9,10 +9,54 @@ from lal import LIGOTimeGPS, GreenwichMeanSiderealTime, ComputeDetAMResponse
 import lal
 detectors = dict([(d.frDetector.prefix, d) for d in lal.CachedDetectors])
 
+import lalsimulation
+"""
+_ref_h, _ = lalsimulation.SimInspiralFD(
+            1.4 * lal.MSUN_SI,  1.4 * lal.MSUN_SI,
+            0., 0., 0.,
+            0., 0., 0.,
+            100e6 * lal.PC_SI, 0.0, 0.0, 0.0, 0.0, 0.0,
+            0.125, 10.0, 2048., None,
+            lalsimulation.SimInspiralGetApproximantFromString("IMRPhenomPv2"))
+"""
+_ref_h, _ = lalsimulation.SimInspiralFD(0.0, 0.125,
+            1.4 * lal.MSUN_SI,  1.4 * lal.MSUN_SI,
+            0., 0., 0.,
+            0., 0., 0.,
+            10., 2048., 10.,
+            100e6 * lal.PC_SI, 0.0, 0.0,
+            0.0, 0.0, None, None, -1, -1,
+            lalsimulation.SimInspiralGetApproximantFromString("IMRPhenomPv2"))
+
+def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=None):
+    """
+    Fairhurst 2009, eqn 23.
+    """
+    flow = int(10 / 0.125)
+    freq = np.linspace(0, 2048, int(2048/0.125) + 1)
+    freq = freq[flow:]
+
+    if h is None:
+        h = _ref_h.data.data[flow:]
+    psd = map(psd, freq)
+    psd = np.asarray(psd)
+
+    ip = np.real(h.conj() * h / psd) * 0.125
+    snr = 2 * np.sqrt(np.sum(ip))
+
+    mean = 4 * np.sum(ip * freq) / snr ** 2
+    var = 4 * np.sum(ip * freq**2) / snr ** 2
+
+    sig_f = np.sqrt(var - mean**2)
+    return snr, (1.0 / 2 / np.pi / sig_f / snr)
+
+
 # Some reference numbers from Fairhurst 2009
 # SNR of 10, up to ISCO
-_aLIGO_delta_t = 0.1e-3
-_aVirgo_delta_t = 0.1e-3
+_snr, _aLIGO_delta_t = effective_bandwidth()
+_aLIGO_delta_t *= _snr / 10
+_snr, _aVirgo_delta_t = effective_bandwidth(lalsimulation.SimNoisePSDAdvVirgo)
+_aVirgo_delta_t *= _snr / 10
 _timing = {
     "H1": _aLIGO_delta_t,
     "L1": _aLIGO_delta_t,
@@ -20,6 +64,7 @@ _timing = {
     "I1": _aLIGO_delta_t,
     "V1": _aVirgo_delta_t
 }
+
 def get_timing_dict(snr=10, dets=None):
     """
     Get a dictionary with the \sigma_t values for each detector specified by 'dets'. If 'dets' is not specified, all five HKILV will be retrieved. The timing errors are scaled by signal to noise ratio, and pinned to an SNR of 10.
