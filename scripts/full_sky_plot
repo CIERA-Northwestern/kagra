@@ -142,8 +142,8 @@ err_reg = solid_angle_error((ra_grid * np.pi / 180, dec_grid * np.pi / 180), tim
 #net_pat_tmp = net_pat_tmp.reshape(dec_grid.shape)
 
 # Probably because we're viewing the sphere from "outside in".
-ra_grid -= 180
-dec_grid *= -1
+#ra_grid -= 180
+#dec_grid *= -1
 
 """
 # TODO: Make into a function and be consistent
@@ -167,16 +167,13 @@ ra_grid, dec_grid = m(ra_grid, dec_grid)
 #
 if args.underplot == "network":
     m.contourf(ra_grid, dec_grid, net_pat, 1000, cmap=matplotlib.cm.Greys_r)
-    #plt.savefig("net_pat.png")
 
 elif args.underplot == "dpf":
     m.contourf(ra_grid, dec_grid, dpf, 1000, cmap=matplotlib.cm.hsv,
                 vmin=-np.pi/4, vmax=np.pi/4)
-    #plt.savefig("net_dpf.png")
 
 elif args.underplot == "alignment":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
-    #plt.savefig("net_align.png")
 
 elif args.underplot == "error_reg":
     m.contourf(ra_grid, dec_grid, np.log10(err_reg * 180 * 90 / np.pi), 1000, cmap=matplotlib.cm.bone_r)
@@ -189,30 +186,24 @@ if False:
     gr_ra_grid, gr_dec_grid, gr_net_pat, _, _ = \
         net_antenna_pattern(gpstime, network, npts=20)
 
-    gr_ra_grid -= 180
-    gr_dec_grid *= -1
     gr_ra_grid, gr_dec_grid = m(gr_ra_grid, gr_dec_grid)
 
     net_grad = net_gradient(gr_net_pat, npts=20)
     m.quiver(gr_ra_grid, gr_dec_grid, net_grad[1], -net_grad[0], color="r")
-    #plt.savefig("net_pat.png")
 
 #
 # Overplot contours of the network antenna pattern
 #
 if args.overplot == "network":
     m.contour(ra_grid, dec_grid, net_pat, 10, cmap=matplotlib.cm.cool)
-    #plt.savefig("net_pat.png")
 
 elif args.overplot == "dpf":
     m.contour(ra_grid, dec_grid, dpf, 10, cmap=matplotlib.cm.cool,
                 vmin=-np.pi/4, vmax=np.pi/4)
-    #plt.savefig("net_dpf.png")
 
 elif args.overplot == "alignment":
     m.contour(ra_grid, dec_grid, net_align, 10, cmap=matplotlib.cm.cool,
                 vmin=0, vmax=1)
-    #plt.savefig("net_align.png")
 
 #
 # Load injections
@@ -239,23 +230,25 @@ for label, globpat in pspecs.iteritems():
     plt.figure(0)
     for filename in files:
         enum = get_event_num(filename)
-        print "Processing event %d" % enum
+        print "Processing event %d from file %s" % (enum, filename)
         if enum in blacklist:
             print "Event %d is listed in the black list, skipping." % enum
             continue
-        print filename
 
         #
         # Generate vital statistics
         #
         gmst = inj[enum].geocent_end_time
         gmst = np.mod(gmst/3600., 24.)
+        gmst *= 180. / 12
 
         """
-        ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
-        ra_inj *= ((-gmst * 12 / np.pi) + (ra_inj * 180 / np.pi)) * -1
-        dec_inj *= 180 / np.pi
-        plt.annotate(str(enum), xy=m(ra_inj, dec_inj))
+        ra_inj += (360 - gmst)
+        # basemap coordinate system is -180 -> 180
+        if ra_inj > 180:
+            ra_inj -= 360
+        #print ra_inj, dec_inj
+        m.scatter([ra_inj], [dec_inj], marker='x', color='m', s=50)
         """
 
         sky_data, smap = create_table(filename)
@@ -290,20 +283,15 @@ for label, globpat in pspecs.iteritems():
                 sky_data["dec"], smap, npts=500)
             np.savez(cache_fname, [ra_int, dec_int, prob_int])
 
-        # Better idea, figure out by how much this shift the ra_int and shift
+        # Figure out by how much this shift the ra_int and shift
         # the z array by the opposite of that amount
-        ra_int = (-gmst + ra_int) * np.pi / 12
-        # Reverse... and undo the radians...
-        #ra_int = -ra_int * 180 / np.pi
-        ra_int = ra_int * 180 / np.pi
-        ra_int = np.where(ra_int < -180, ra_int + 360, ra_int)
-        ra_int = np.where(ra_int > 180, ra_int - 360, ra_int)
-
-        # ANNOYING!
-        while ra_int[0,0]/ra_int[0,-1] > 0:
-            ra_int = np.roll(ra_int, -1, axis=1)
-            prob_int = np.roll(prob_int, -1, axis=1)
-        ra_int *= -1
+        ra_int = ra_int * 180 / 12.
+        dra = ra_int[0,1] - ra_int[0,0]
+        # because of the healpix -> basemap coordinate system
+        # FIXME: Move this to the interpolator
+        prob_int = np.roll(prob_int, ra_int.shape[1]/2, axis=1)
+        # We roll negative because the skymap is sliding "backwards" in time
+        prob_int = np.roll(prob_int, -int(gmst / dra), axis=1)
 
         ra_int, dec_int = m(ra_int, dec_int)
 
