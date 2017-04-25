@@ -154,8 +154,8 @@ def delay_to_plane(source_pos, network_timing):
 
     return del_omega_inv_sq
 
-def create_table(fitsfile):
-    skymap = healpy.read_map(fitsfile)
+def create_table(fitsfile, verbose=False):
+    skymap = healpy.read_map(fitsfile, verbose=verbose)
     dat = np.zeros((4, len(skymap)))
     ns = healpy.npix2nside(len(skymap))
     dec, ra = healpy.pix2ang(ns, np.asarray(range(len(skymap))))
@@ -168,7 +168,7 @@ def create_table(fitsfile):
     return dat, skymap
 
 def interpolate_map(ra, dec, prob, npts=100):
-    ra_int = np.linspace(0, 24., 2*npts, endpoint=False)
+    ra_int = np.linspace(-12, 12., 2*npts, endpoint=False)
     dec_int = np.linspace(-90, 90, npts, endpoint=False)
 
     from matplotlib.mlab import griddata
@@ -183,14 +183,17 @@ def interpolate_healpix_map(ra, dec, prob, npts=100):
     ra_int, dec_int = np.meshgrid(ra_int, dec_int)
     prob_int = healpy.pixelfunc.get_interp_val(prob, dec_int, ra_int)
 
+    # form RA and dec into coordinates expected by basemap
     ra_int *= 12 / np.pi
+    ra_int -= 12
     dec_int -= np.pi/2
+    dec_int *= -1
     dec_int *= 180 / np.pi
 
     return ra_int, dec_int, prob_int
 
 def _sph_grid(npts):
-    ra_grid = np.linspace(0, 2*np.pi, 2*npts)
+    ra_grid = np.linspace(-np.pi, np.pi, 2*npts)
     dec_grid = np.linspace(-np.pi/2, np.pi/2, npts)
     return np.meshgrid(ra_grid, dec_grid)
 
