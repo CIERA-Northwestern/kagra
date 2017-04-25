@@ -194,6 +194,7 @@ n_nets = len(pspecs)
 plt.figure(0)
 # Multiply by three to get several separate columns for colorbars on the right
 gs = GridSpec(3, 3 * (n_nets + 1))
+gs.update(wspace=0, hspace=0)
 for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
 
     print label + " => " + globpat
@@ -207,10 +208,10 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
         i += 1
 
         m = Basemap(projection='cyl', \
-                    llcrnrlat=5, urcrnrlat=15, llcrnrlon=157, urcrnrlon=165)
-        m.drawparallels(np.arange(-90., 90., 15.), labels=[1, 0, 0, 0],
+                    llcrnrlat=-15, urcrnrlat=-5, llcrnrlon=-165, urcrnrlon=-155)
+        m.drawparallels(np.arange(-90., 90., 45.), labels=[1, 0, 0, 0],
                     labelstyle='+/-')
-        m.drawmeridians(np.arange(0., 360., 10.))  #,labels=[0,0,0,1],labelstyle='+/-')
+        m.drawmeridians(np.arange(0., 360., 45.))  #,labels=[0,0,0,1],labelstyle='+/-')
 
         m.drawmapboundary()
         m.drawcoastlines(linewidth=0.5)
@@ -229,9 +230,6 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
         timing = get_timing_dict(snr=12, dets=network)
         err_reg = solid_angle_error((ra_grid * np.pi / 180, dec_grid * np.pi / 180), timing)
 
-        # Probably because we're viewing the sphere from "outside in".
-        ra_grid -= 180
-        dec_grid *= -1
         ra_grid, dec_grid = m(ra_grid, dec_grid)
 
         #
@@ -239,16 +237,13 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
         #
         if args.underplot == "network":
             m.contourf(ra_grid, dec_grid, net_pat, 1000, cmap=matplotlib.cm.Greys_r)
-            #plt.savefig("net_pat.png")
 
         elif args.underplot == "dpf":
             m.contourf(ra_grid, dec_grid, dpf, 1000, cmap=matplotlib.cm.hsv,
                         vmin=-np.pi/4, vmax=np.pi/4)
-            #plt.savefig("net_dpf.png")
 
         elif args.underplot == "alignment":
             m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
-            #plt.savefig("net_align.png")
 
         elif args.underplot == "error_reg":
             m.contourf(ra_grid, dec_grid, np.log10(err_reg * 180 * 90 / np.pi), 1000, cmap=matplotlib.cm.bone_r)
@@ -259,18 +254,16 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
         #
         if args.overplot == "network":
             m.contour(ra_grid, dec_grid, net_pat, 10, cmap=matplotlib.cm.cool)
-            #plt.savefig("net_pat.png")
 
         elif args.overplot == "dpf":
             m.contour(ra_grid, dec_grid, dpf, 10, cmap=matplotlib.cm.cool,
                         vmin=-np.pi/4, vmax=np.pi/4)
-            #plt.savefig("net_dpf.png")
 
         elif args.overplot == "alignment":
             m.contour(ra_grid, dec_grid, net_align, 10, cmap=matplotlib.cm.cool,
                         vmin=0, vmax=1)
-            #plt.savefig("net_align.png")
 
+        plt_inj = True
         for filename in filegroup:
             try:
                 enum = get_event_num(filename)
@@ -288,11 +281,18 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
             #
             gmst = inj[enum].geocent_end_time
             gmst = np.mod(gmst/3600., 24.)
+            gmst *= 180. / 12
 
             ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
-            ra_inj *= ((-gmst * 12 / np.pi) + (ra_inj * 180 / np.pi)) * -1
+            ra_inj *= 180 / np.pi
             dec_inj *= 180 / np.pi
-            m.scatter([ra_inj], [dec_inj], marker='x', color='m')
+            # Shift it back to midnight UTC
+            ra_inj += (360 - gmst)
+            # basemap coordinate system is -180 -> 180
+            if ra_inj > 180:
+                ra_inj -= 360
+            m.scatter([ra_inj], [dec_inj], marker='x', color='m', s=50)
+            plt.savefig(plot_file)
 
             sky_data, smap = create_table(filename)
             ns = healpy.npix2nside(len(smap))
@@ -326,20 +326,15 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
                     sky_data["dec"], smap, npts=500)
                 np.savez(cache_fname, [ra_int, dec_int, prob_int])
 
-            # Better idea, figure out by how much this shift the ra_int and shift
+            # figure out by how much this shift the ra_int and shift
             # the z array by the opposite of that amount
-            ra_int = (-gmst + ra_int) * np.pi / 12
-            # Reverse... and undo the radians...
-            #ra_int = -ra_int * 180 / np.pi
-            ra_int = ra_int * 180 / np.pi
-            ra_int = np.where(ra_int < -180, ra_int + 360, ra_int)
-            ra_int = np.where(ra_int > 180, ra_int - 360, ra_int)
+            ra_int = ra_int * 180 / 12.
 
-            # ANNOYING!
-            while ra_int[0,0]/ra_int[0,-1] > 0:
-                ra_int = np.roll(ra_int, -1, axis=1)
-                prob_int = np.roll(prob_int, -1, axis=1)
-            ra_int *= -1
+            dra = ra_int[0,1] - ra_int[0,0]
+            # because of the healpix -> basemap coordinate system
+            prob_int = np.roll(prob_int, ra_int.shape[1]/2, axis=1)
+            # We roll negative because the skymap is sliding "backwards" in time
+            prob_int = np.roll(prob_int, -int(gmst / dra), axis=1)
 
             ra_int, dec_int = m(ra_int, dec_int)
 
@@ -362,8 +357,8 @@ for label, cmap in cspecs.iteritems():
             label = r"Network SNR"
         colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
 
-plt.tight_layout()
-plt.subplots_adjust(hspace=0, wspace=0)
+#plt.tight_layout()
+#plt.subplots_adjust(hspace=0, wspace=0)
 plt.savefig(plot_file)
 
 error_region_file = args.file_stem + "_error_regions.json"
