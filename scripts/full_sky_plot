@@ -217,6 +217,10 @@ if args.inj_xml is not None:
 
 plot_file = args.file_stem + ".png"
 
+if args.pathspecs is None:
+    plt.savefig(plot_file)
+    exit()
+
 cspecs = parse_colorspecs(args.colorspecs)
 for label, cmap in cspecs.iteritems():
     print label + " => " + str(cmap)
