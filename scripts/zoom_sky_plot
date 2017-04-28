@@ -204,7 +204,12 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
 
     i = 0
     for key, filegroup in itertools.groupby(sorted(files, key=grep_spin), grep_spin):
-        plt.subplot(gs[net_idx,3*i:3*(i+1)])
+        ax = plt.subplot(gs[net_idx,3*i:3*(i+1)])
+        if i == 0:
+            plt.ylabel(label)
+        if label == pspecs.keys()[0]:
+            plt.xlabel(r"$a_{1,2} = %s$" % key[4:])
+            ax.xaxis.set_label_position('top')
         i += 1
 
         m = Basemap(projection='cyl', \
