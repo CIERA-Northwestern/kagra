@@ -136,11 +136,19 @@ def source_pos_from_vec(x, y, z):
     phi = np.arctan2(y, x)
     return np.asarray((th, phi))
 
-def solid_angle_error(source_pos, network_timing):
+def seconds_since_utc_midnight(gpstime):
+    return (gpstime / 3600. % 24.) * 60 * 60
+
+_default_gps_time = 1e9 - seconds_since_utc_midnight(1e9)
+def solid_angle_error(source_pos, network_timing, gps_time=_default_gps_time):
     """
     Schutz, 2011, eqn. 31 --- quoted from earlier Wen and Chen.
     """
-    del_omega_inv_sq = np.zeros(np.shape(source_pos)[-2:])
+    source_pos = np.asarray(source_pos)
+    del_omega_inv_sq = np.zeros(source_pos.shape[-2:])
+    # translate sources to utc midnight
+    seconds_since_utc_midnight(gps_time) / 3600. * np.pi / 12
+    source_pos[0] -= seconds_since_utc_midnight(gps_time) / 3600. * np.pi / 12
     source_vec = source_vec_from_pos(*source_pos)
     for det_comb in iter_dets(network_timing.keys()):
         timing = map(network_timing.__getitem__, det_comb)
