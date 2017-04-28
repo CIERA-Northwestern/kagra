@@ -121,8 +121,8 @@ m.drawparallels(np.arange(-90., 90., 45.), labels=[1, 0, 0, 0],
                 labelstyle='+/-')
 m.drawmeridians(np.arange(0., 360., 90.))  #,labels=[0,0,0,1],labelstyle='+/-')
 net = "".join([n[0] for n in sorted(network)])
-plt.title("Sky Location Credible Intervals, %s Configuration" % net,
-          fontsize=20)
+#plt.title("Sky Location Credible Intervals, %s Configuration" % net,
+          #fontsize=20)
 m.drawmapboundary()
 
 # Arbitrary midnight UTC
@@ -176,8 +176,11 @@ elif args.underplot == "alignment":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
 
 elif args.underplot == "error_reg":
-    m.contourf(ra_grid, dec_grid, np.log10(err_reg * 180 * 90 / np.pi), 1000, cmap=matplotlib.cm.bone_r)
-    m.colorbar()
+    err_reg *= 180 * 90 / np.pi
+    err_reg = np.ma.masked_greater(err_reg, 100)
+    m.contourf(ra_grid, dec_grid, err_reg, 1000, cmap=matplotlib.cm.Greys, vmin=err_reg.min(), vmax=min(err_reg.max(), 100))
+    cb = m.colorbar()
+    cb.set_label(r"$\Omega_{err}$")
 
 #
 # Gradient plots disabled for now
