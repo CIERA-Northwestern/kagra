@@ -102,9 +102,16 @@ def get_timing_dict(snr=10, dets=None):
     return new_dict
 
 def iter_dets(dets, n=4, unique=True):
+    examined = set()
     for comb in itertools.product(*([dets] * n)):
-        if unique and len(set(comb)) < n - 1:
+        net = "".join(sorted(set([d[0] for d in comb])))
+        if unique and len(set(comb)) != n - 1:
             continue
+        if (comb[0] == comb[1]) or (comb[1] == comb[2]):
+            continue
+        if net in examined:
+            continue
+        examined.add(net)
         yield comb
 
 def baseline(d1, d2):
