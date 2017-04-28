@@ -19,7 +19,7 @@ _ref_h, _ = lalsimulation.SimInspiralFD(
             0.125, 10.0, 2048., None,
             lalsimulation.SimInspiralGetApproximantFromString("IMRPhenomPv2"))
 """
-_ref_h, _ = lalsimulation.SimInspiralFD(0.0, 0.125,
+_ref_h_bns, _ = lalsimulation.SimInspiralFD(0.0, 0.125,
             1.4 * lal.MSUN_SI,  1.4 * lal.MSUN_SI,
             0., 0., 0.,
             0., 0., 0.,
@@ -28,7 +28,25 @@ _ref_h, _ = lalsimulation.SimInspiralFD(0.0, 0.125,
             0.0, 0.0, None, None, -1, -1,
             lalsimulation.SimInspiralGetApproximantFromString("IMRPhenomPv2"))
 
-def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=None):
+_ref_h_nsbh, _ = lalsimulation.SimInspiralFD(0.0, 0.125,
+            1.4 * lal.MSUN_SI,  10. * lal.MSUN_SI,
+            0., 0., 0.,
+            0., 0., 0.,
+            10., 2048., 10.,
+            100e6 * lal.PC_SI, 0.0, 0.0,
+            0.0, 0.0, None, None, -1, -1,
+            lalsimulation.SimInspiralGetApproximantFromString("IMRPhenomPv2"))
+
+_ref_h_nsbh_ms, _ = lalsimulation.SimInspiralFD(0.0, 0.125,
+            1.4 * lal.MSUN_SI,  10. * lal.MSUN_SI,
+            0., 0., 0.,
+            0., 0., 0.9,
+            10., 2048., 10.,
+            100e6 * lal.PC_SI, 0.0, 0.0,
+            0.0, 0.0, None, None, -1, -1,
+            lalsimulation.SimInspiralGetApproximantFromString("IMRPhenomPv2"))
+
+def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=None, get_timing=True):
     """
     Fairhurst 2009, eqn 23.
     """
@@ -37,7 +55,9 @@ def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=No
     freq = freq[flow:]
 
     if h is None:
-        h = _ref_h.data.data[flow:]
+        h = _ref_h_bns.data.data[flow:]
+    else:
+        h = h.data.data[flow:]
     psd = map(psd, freq)
     psd = np.asarray(psd)
 
@@ -48,7 +68,10 @@ def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=No
     var = 4 * np.sum(ip * freq**2) / snr ** 2
 
     sig_f = np.sqrt(var - mean**2)
-    return snr, (1.0 / 2 / np.pi / sig_f / snr)
+    if get_timing:
+        return snr, (1.0 / 2 / np.pi / sig_f / snr)
+    else:
+        return sig_f
 
 
 # Some reference numbers from Fairhurst 2009
