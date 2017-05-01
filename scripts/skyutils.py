@@ -47,6 +47,15 @@ _ref_h_nsbh_ms, _ = lalsimulation.SimInspiralFD(0.0, 0.125,
             0.0, 0.0, None, None, -1, -1,
             lalsimulation.SimInspiralGetApproximantFromString("IMRPhenomPv2"))
 
+
+_default_psds = {
+    "H1": lalsimulation.SimNoisePSDaLIGOZeroDetHighPower,
+    "I1": lalsimulation.SimNoisePSDaLIGOZeroDetHighPower,
+    "K1": lalsimulation.SimNoisePSDaLIGOZeroDetHighPower,
+    "L1": lalsimulation.SimNoisePSDaLIGOZeroDetHighPower,
+    "V1": lalsimulation.SimNoisePSDAdvVirgo
+}
+
 def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=None, get_timing=True):
     """
     Fairhurst 2009, eqn 23.
@@ -74,26 +83,24 @@ def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=No
     else:
         return sig_f
 
-
 # Some reference numbers from Fairhurst 2009
 # SNR of 10, up to ISCO
-_snr, _aLIGO_delta_t = effective_bandwidth()
-_aLIGO_delta_t *= _snr / 10
-_snr, _aVirgo_delta_t = effective_bandwidth(lalsimulation.SimNoisePSDAdvVirgo)
-_aVirgo_delta_t *= _snr / 10
-_timing = {
-    "H1": _aLIGO_delta_t,
-    "L1": _aLIGO_delta_t,
-    "K1": _aLIGO_delta_t,
-    "I1": _aLIGO_delta_t,
-    "V1": _aVirgo_delta_t
-}
+_timing = {}
+def get_timing_dict(psd_dict={}, snr=10, sig=_ref_h_bns):
+    for d, psd in psd_dict.iteritems():
+        if psd is None:
+            psd = _default_psds[d]
+        _snr, delta_t = effective_bandwidth(psd, sig)
+        delta_t *= _snr / snr
+        _timing[d] = delta_t
 
-def get_timing_dict(snr=10, dets=None):
+    return _timing
+
+def scale_timing_dict(timing=None, snr=10, dets=None):
     """
     Get a dictionary with the \sigma_t values for each detector specified by 'dets'. If 'dets' is not specified, all five HKILV will be retrieved. The timing errors are scaled by signal to noise ratio, and pinned to an SNR of 10.
     """
-    new_dict = copy.copy(_timing)
+    new_dict = copy.copy(timing or _timing)
     for d in copy.copy(new_dict.keys()):
         if dets is not None and d not in dets:
             del new_dict[d]
