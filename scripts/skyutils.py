@@ -1,6 +1,7 @@
 import copy
 import itertools
 
+from scipy.optimize import brentq
 import healpy
 import numpy as np
 from matplotlib import pyplot as plt
@@ -124,7 +125,6 @@ def source_vec_from_pos(ra, dec):
     RA, DEC -> normalized position vector
     TODO: This probably should be negative.
     """
-    #return np.asarray((np.sin(dec) * np.cos(ra), np.sin(dec) * np.sin(ra), np.cos(dec)))
     return np.asarray((np.cos(dec) * np.cos(ra), np.cos(dec) * np.sin(ra), np.sin(dec)))
 
 def source_pos_from_vec(x, y, z):
@@ -135,6 +135,33 @@ def source_pos_from_vec(x, y, z):
     th = 0 if r == 0 else np.arccos(z / r)
     phi = np.arctan2(y, x)
     return np.asarray((th, phi))
+
+def root_plane_intercept(plane_vec, r=lal.REARTH_SI):
+    # Generate a set of "right ascensions"
+    # FIXME: This will be a simgular problem if the plane is parallel with a
+    # meridien of longitude, and will be bad for planes which are close to this
+    phis = np.linspace(0, np.pi * 2, 1000)
+    thetas = []
+    for cphi, sphi in zip(np.cos(phis), np.sin(phis)):
+        # This is the function we're minimizing
+        def planar_distance(theta):
+            rad_vec = (r*np.sin(theta)*cphi, r*np.sin(theta)*sphi, r*np.cos(theta), 1)
+            return np.dot(plane_vec, rad_vec)
+        theta_max = brentq(planar_distance, 0, np.pi)
+        thetas.append(theta_max)
+    return thetas, phis
+
+def detector_plane(network):
+    assert len(network) == 3
+    r_1 = baseline(network[0], network[1])
+    r_2 = baseline(network[1], network[2])
+    det_plane = np.cross(r_1, r_2)
+    det_plane /= np.sqrt(np.dot(det_plane, det_plane))
+
+    p0 = detectors[network[0]].location
+    itrcp = -np.dot(det_plane, p0)
+
+    return root_plane_intercept(np.append(det_plane, itrcp))
 
 def seconds_since_utc_midnight(gpstime):
     return (gpstime / 3600. % 24.) * 60 * 60
