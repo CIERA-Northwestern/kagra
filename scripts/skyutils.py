@@ -85,8 +85,8 @@ def effective_bandwidth(psd=lalsimulation.SimNoisePSDaLIGOZeroDetHighPower, h=No
 
 # Some reference numbers from Fairhurst 2009
 # SNR of 10, up to ISCO
-_timing = {}
 def get_timing_dict(psd_dict={}, snr=10, sig=_ref_h_bns):
+    _timing = {}
     for d, psd in psd_dict.iteritems():
         if psd is None:
             psd = _default_psds[d]
@@ -96,11 +96,11 @@ def get_timing_dict(psd_dict={}, snr=10, sig=_ref_h_bns):
 
     return _timing
 
-def scale_timing_dict(timing=None, snr=10, dets=None):
+def scale_timing_dict(timing, snr=10, dets=None):
     """
     Get a dictionary with the \sigma_t values for each detector specified by 'dets'. If 'dets' is not specified, all five HKILV will be retrieved. The timing errors are scaled by signal to noise ratio, and pinned to an SNR of 10.
     """
-    new_dict = copy.copy(timing or _timing)
+    new_dict = copy.copy(timing)
     for d in copy.copy(new_dict.keys()):
         if dets is not None and d not in dets:
             del new_dict[d]
@@ -181,7 +181,6 @@ def solid_angle_error(source_pos, network_timing, gps_time=_default_gps_time):
     source_pos = np.asarray(source_pos)
     del_omega_inv_sq = np.zeros(source_pos.shape[-2:])
     # translate sources to utc midnight
-    seconds_since_utc_midnight(gps_time) / 3600. * np.pi / 12
     source_pos[0] -= seconds_since_utc_midnight(gps_time) / 3600. * np.pi / 12
     source_vec = source_vec_from_pos(*source_pos)
     for det_comb in iter_dets(network_timing.keys()):
