@@ -83,7 +83,7 @@ def parse_colorspecs(pspecs):
             out[label] = Plottable(cmap)
     return out
 
-_antenna_functions = ("network", "alignment", "dpf", "error_reg")
+_antenna_functions = ("network", "alignment", "dpf", "error_reg_bns", "error_reg_nsbh")
 _network = ("H1", "K1", "L1", "V1")
 
 argp = ArgumentParser()
@@ -96,6 +96,7 @@ argp.add_argument("-c", "--colorspecs", action="append", help="Add color specs t
 argp.add_argument("-f", "--file-stem", help="File stem for plotting output.")
 #argp.add_argument("-l", "--runlabels", action="store_true", help="Annotate each area with its run label.")
 argp.add_argument("-b", "--black-list", help="Skip events listed in this file.")
+argp.add_argument("-D", "--detector-planes", action="store_true", help="Overplot intersection of the detector planes with Earth fixed geography.")
 args = argp.parse_args()
 
 if args.black_list is not None:
@@ -132,7 +133,12 @@ ra_grid, dec_grid, net_pat, net_align, dpf = \
 #print np.max(net_pat), np.max(net_align)
 
 # FIXME: hardcoded
-timing = get_timing_dict(snr=12, dets=network)
+if args.underplot == "error_reg_nsbh":
+    from skyutils import _ref_h_nsbh
+    timing = get_timing_dict(dict(zip(network, [None] * len(network))), snr=12, sig=_ref_h_nsbh)
+else:
+    from skyutils import _ref_h_bns
+    timing = get_timing_dict(dict(zip(network, [None] * len(network))), snr=12, sig=_ref_h_bns)
 err_reg = solid_angle_error((ra_grid * np.pi / 180, dec_grid * np.pi / 180), timing)
 
 # FIXME: Still getting warnings, not sure how this is supposed to work.
@@ -175,12 +181,26 @@ elif args.underplot == "dpf":
 elif args.underplot == "alignment":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
 
-elif args.underplot == "error_reg":
-    err_reg *= 180 * 90 / np.pi
+elif args.underplot == "error_reg_bns" or args.underplot == "error_reg_nsbh":
+    err_reg *= (180 / np.pi)**2
     err_reg = np.ma.masked_greater(err_reg, 100)
     m.contourf(ra_grid, dec_grid, err_reg, 1000, cmap=matplotlib.cm.Greys, vmin=err_reg.min(), vmax=min(err_reg.max(), 100))
     cb = m.colorbar()
     cb.set_label(r"$\Omega_{err}$")
+
+if args.detector_planes:
+    for subnet in itertools.combinations(network, 3):
+        th, ph = detector_plane(subnet)
+        # Convert to basemap coordinates
+        ph -= np.pi
+        th = np.roll(th, -len(th)/2)
+        # Flip the latitudes (0, 180) -> (90, -90)
+        th -= np.pi / 2
+        th *= -1
+        th *= 180 / np.pi
+        ph *= 180 / np.pi
+        ph, th = m(ph, th)
+        m.plot(ph, th, 'r-')
 
 #
 # Gradient plots disabled for now
