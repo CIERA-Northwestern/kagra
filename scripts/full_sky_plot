@@ -245,7 +245,7 @@ cspecs = parse_colorspecs(args.colorspecs)
 for label, cmap in cspecs.iteritems():
     print label + " => " + str(cmap)
 
-error_regions = defaultdict(list)
+error_regions = [defaultdict(list), defaultdict(list), defaultdict(list)]
 pspecs = parse_pathspecs(args.pathspecs)
 for label, globpat in pspecs.iteritems():
 
@@ -284,22 +284,41 @@ for label, globpat in pspecs.iteritems():
 
         prb68 = np.searchsorted(sky_data["cumul"], 0.68)
         prb90 = np.searchsorted(sky_data["cumul"], 0.90)
-        prb99 = np.searchsorted(sky_data["cumul"], 0.99)
+        prb95 = np.searchsorted(sky_data["cumul"], 0.95)
 
-        error_regions[label].append(prb90 * pix_size)
-        assert error_regions[label][-1] < 1e3
+        error_regions[0][label].append(prb68 * pix_size)
+        error_regions[1][label].append(prb90 * pix_size)
+        error_regions[2][label].append(prb95 * pix_size)
+        assert error_regions[0][label][-1] < 1e3
+
+        snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
+        with open(snr, "r") as snrf:
+            snrs = dict([map(str.strip, l.split(":")) for l in snrf.readlines()])
+        for k in snrs:
+            snrs[k] = float(snrs[k])
+        print snrs
 
         cmap = cspecs[label]
         if cmap.quant == "error_region":
             linecolor = cmap(prb90 * pix_size)
         elif cmap.quant == "snr":
-            snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
-            with open(snr, "r") as snrf:
-                snrs = dict([map(str.strip, l.split(":")) for l in snrf.readlines()])
-            for k in snrs:
-                snrs[k] = float(snrs[k])
-            print snrs
             linecolor = cmap(snrs["Network"])
+
+        #
+        # Expected error regions
+        #
+        ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
+        inj_loc = np.asarray((ra_inj, dec_inj))
+        inj_loc.shape = (2, 1, 1)
+        snr = snrs["Network"] / (len(snrs) - 1)
+        del snrs["Network"]
+        for d in snrs:
+            snrs[d] = None
+        timing = get_timing_dict(snrs, snr)
+        exp_err_reg = solid_angle_error(inj_loc, timing, inj[enum].geocent_end_time)
+        exp_err_reg = (180 / np.pi)**2 * np.squeeze(exp_err_reg)
+        print "Expected error region size vs realized:"
+        print exp_err_reg, prb68 * pix_size
 
         cache_fname = filename.replace("fits.gz", "intrp.npz")
         if os.path.exists(cache_fname):
@@ -343,15 +362,21 @@ for label, cmap in cspecs.iteritems():
 
 plt.savefig(plot_file)
 
-error_region_file = args.file_stem + "_error_regions.json"
 import json
-with open(error_region_file, "w") as fout:
-    json.dump(error_regions, fout)
+error_region_plot = args.file_stem + "_error_regions.png"
+ls = ["-", "-.", "--"]
+for reg, err_reg in zip((68, 90, 95), error_regions):
 
-error_region_file = args.file_stem + "_error_regions.png"
-plt.figure(1)
-for label, err_reg in error_regions.iteritems():
-    yaxis = np.linspace(0, 1, len(err_reg))
-    plt.step(sorted(err_reg), yaxis, label=label)
+    error_region_file = args.file_stem + "_error_regions_%s.json" % str(reg)
+    with open(error_region_file, "w") as fout:
+        json.dump(err_reg, fout)
+
+    plt.figure(1)
+    for label, err_reg_dict in err_reg.iteritems():
+        err_reg = sorted(err_reg_dict)
+        yaxis = np.linspace(0, 1, len(err_reg))
+        plt.step(err_reg, yaxis, label=label + " %d%%" % reg, linestyle=ls[0])
+    ls.append(ls.pop(0))
+
 plt.legend(loc="lower right")
-plt.savefig(error_region_file)
+plt.savefig(error_region_plot)

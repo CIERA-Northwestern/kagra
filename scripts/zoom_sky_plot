@@ -188,7 +188,7 @@ cspecs = parse_colorspecs(args.colorspecs)
 for label, cmap in cspecs.iteritems():
     print label + " => " + str(cmap)
 
-error_regions = defaultdict(dict)
+error_regions = [defaultdict(dict), defaultdict(dict), defaultdict(dict)]
 pspecs = parse_pathspecs(args.pathspecs)
 n_nets = len(pspecs)
 plt.figure(0)
@@ -232,7 +232,8 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
         #print np.max(net_pat), np.max(net_align)
 
         # FIXME: hardcoded
-        timing = get_timing_dict(snr=12, dets=network)
+        from skyutils import _ref_h_bns
+        timing = get_timing_dict(dict(zip(network, [None] * len(network))), snr=12, sig=_ref_h_bns)
         err_reg = solid_angle_error((ra_grid * np.pi / 180, dec_grid * np.pi / 180), timing)
 
         ra_grid, dec_grid = m(ra_grid, dec_grid)
@@ -305,9 +306,11 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
 
             prb68 = np.searchsorted(sky_data["cumul"], 0.68)
             prb90 = np.searchsorted(sky_data["cumul"], 0.90)
-            prb99 = np.searchsorted(sky_data["cumul"], 0.99)
+            prb95 = np.searchsorted(sky_data["cumul"], 0.95)
 
-            error_regions[label][key + "_" + str(enum)] = prb90 * pix_size
+            error_regions[0][label][key + "_" + str(enum)] = prb68 * pix_size
+            error_regions[1][label][key + "_" + str(enum)] = prb90 * pix_size
+            error_regions[2][label][key + "_" + str(enum)] = prb95 * pix_size
             assert prb90 * pix_size < 1e3
 
             cmap = cspecs[label]
@@ -322,6 +325,25 @@ for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
                 print snrs
                 linecolor = cmap(snrs["Network"])
 
+            #
+            # Expected error regions
+            #
+            ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
+            inj_loc = np.asarray((ra_inj, dec_inj))
+            inj_loc.shape = (2, 1, 1)
+            snr = snrs["Network"] / (len(snrs) - 1)
+            del snrs["Network"]
+            for d in snrs:
+                snrs[d] = None
+            timing = get_timing_dict(snrs, snr)
+            exp_err_reg = solid_angle_error(inj_loc, timing, inj[enum].geocent_end_time)
+            exp_err_reg = (180 / np.pi)**2 * np.squeeze(exp_err_reg)[0]
+            print "Expected error region size vs realized:"
+            print exp_err_reg, prb68 * pix_size
+
+            #
+            # Load / Interpolate map
+            #
             cache_fname = filename.replace("fits.gz", "intrp.npz")
             if os.path.exists(cache_fname):
                 print "Loading cached interpolated map: %s" % cache_fname
@@ -366,16 +388,23 @@ for label, cmap in cspecs.iteritems():
 #plt.subplots_adjust(hspace=0, wspace=0)
 plt.savefig(plot_file)
 
-error_region_file = args.file_stem + "_error_regions.json"
 import json
-with open(error_region_file, "w") as fout:
-    json.dump(error_regions, fout)
+error_region_plot = args.file_stem + "_error_regions.png"
+ls = ["-", "-.", "--"]
+colors = {"HLV": 'r', "HKLV": 'g', "HIKLV": 'c'}
+for reg, err_reg in zip((68, 90, 95), error_regions):
 
-error_region_file = args.file_stem + "_error_regions.png"
-plt.figure(1)
-for label, err_reg_dict in error_regions.iteritems():
-    err_reg = sorted(err_reg_dict.values())
-    yaxis = np.linspace(0, 1, len(err_reg))
-    plt.step(err_reg, yaxis, label=label)
+    error_region_file = args.file_stem + "_error_regions_%s.json" % str(reg)
+    with open(error_region_file, "w") as fout:
+        json.dump(err_reg, fout)
+
+    plt.figure(1)
+    for label, err_reg_dict in err_reg.iteritems():
+        color = colors[label.split("_")[0]]
+        err_reg = sorted(err_reg_dict.values())
+        yaxis = np.linspace(0, 1, len(err_reg))
+        plt.step(err_reg, yaxis, label=label + " %d%%" % reg, color=color, linestyle=ls[0])
+    ls.append(ls.pop(0))
+
 plt.legend(loc="lower right")
-plt.savefig(error_region_file)
+plt.savefig(error_region_plot)
