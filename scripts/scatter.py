@@ -123,11 +123,19 @@ m.drawmapboundary()
 # Arbitrary midnight UTC
 gpstime = 1e9 - (1e9 % (3600 * 24))
 ra_grid, dec_grid, net_pat, net_align, dpf = \
-    net_antenna_pattern(gpstime, network, norm=True)
+    net_antenna_pattern(gpstime, network) #, norm=True)
 #print np.max(net_pat), np.max(net_align)
 
+# Find Integrated network antenna pattern
+filename = 'integrated_net_pat_%s' % configuration
+integrated_net_pat = open(filename, 'w')
+integrated_net_pat.write(str(integrate_net_pat(gpstime, network)))
+integrated_net_pat.close()
 
-# FIXME: Still getting warnings, not sure how this is supposed to work.
+
+
+
+#FIXME: Still getting warnings, not sure how this is supposed to work.
 #net_pat, ra_grid = basemap.shiftgrid(180, net_pat.flatten(), ra_grid.flatten(), start=False)
 #net_pat_tmp, ra_grid_tmp = basemap.shiftgrid(180., net_pat.flatten(), ra_grid.flatten())
 #ra_grid_tmp = ra_grid_tmp.reshape(dec_grid.shape)
@@ -169,20 +177,6 @@ elif args.underplot == "align":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
     #plt.savefig("net_align.png")
 
-#
-# Gradient plots disabled for now
-#
-if False:
-    gr_ra_grid, gr_dec_grid, gr_net_pat, _, _ = \
-        net_antenna_pattern(gpstime, network, npts=20, norm=True)
-
-    gr_ra_grid -= 180
-    gr_dec_grid *= -1
-    gr_ra_grid, gr_dec_grid = m(gr_ra_grid, gr_dec_grid)
-
-    net_grad = net_gradient(gr_net_pat, npts=20)
-    m.quiver(gr_ra_grid, gr_dec_grid, net_grad[1], -net_grad[0], color="r")
-    #plt.savefig("net_pat.png")
 
 #
 # Overplot contours of the network antenna pattern
@@ -223,7 +217,7 @@ for label, globpat in pspecs.iteritems():
     #print "Globbed %d files for pattern %s" % (len(files), globpat)
 
     plt.figure(0)
-    for filename in files: #[:10]:  # Change this to run faster
+    for filename in files: #[:3]:  # Change this to run faster
         enum = get_event_num(filename)
         #print "Processing event %d" % enum
 
@@ -238,13 +232,9 @@ for label, globpat in pspecs.iteritems():
         pix_size = healpy.nside2pixarea(ns, degrees=True)
 
         prb68 = np.searchsorted(sky_data["cumul"], 0.68)
+        prb90 = np.searchsorted(sky_data["cumul"], 0.90)
         prb95 = np.searchsorted(sky_data["cumul"], 0.95)
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
-
-        # Identify outliers
-        #if prb68 * pix_size > 1e3:
-        #    print prb68 * pix_size
-        #    outliers.append((configuration, enum, prb68*pix_size))
 
         if configuration == "HLV":
             snr = "/projects/b1011/spinning_runs/freezingparams_20160402_IMR/" + str(enum)  + "/none/snr.txt"
@@ -293,7 +283,7 @@ for label, globpat in pspecs.iteritems():
         if False:
             cmap = cspecs[label]
             if cmap.quant == "error_regior":
-                linecolor = cmap(prb68 * pix_size)
+                linecolor = cmap(prb90 * pix_size)
             elif cmap.quant == "snr":
                 linecolor = cmap(snrs["Network"])
 
@@ -323,29 +313,32 @@ for label, globpat in pspecs.iteritems():
 
             ra_int, dec_int = m(ra_int, dec_int)
 
-            m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
+            m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb90]], colors=(linecolor,), linewidths=0.5)
 
         # Use gpstime of this injection to find the network antenna pattern at that time at this ra and dec
-        antenna_pattern = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude, norm=True)[0]
-        config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern, enum])
+        antenna_pattern = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude)[0]
+        alignment = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude)[1]
+        config_information[label].append([prb90 * pix_size, snrs["Network"], antenna_pattern, enum, alignment])
 
+        #print gmst, network, inj[enum].longitude, inj[enum].latitude
             # Debuggin
             #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
 
         # FIXME: temporary
         plt.savefig("figures/test_map.png")
 
-filename = 'outliers_%s' % configuration
-outlier_file = open(filename, 'w')
-for run in outliers:
+#filename = 'outliers_%s' % configuration
+#outlier_file = open(filename, 'w')
+#for run in outliers:
     #outlier_file.write('Event number: ' + str(run[1]) + ', Second-Highest SNR: ' + str(run[2]))
     #outlier_file.write('\n')
-    outlier_file.write(str(run))
-    outlier_file.write('\n')
+#    outlier_file.write(str(run))
+#    outlier_file.write('\n')
 
 #outlier_file.write(outliers)
-outlier_file.close()
-print outliers
+#outlier_file.close()
+#print outliers
+
 
 plt.figure(1)
 gs = gridspec.GridSpec(3, 3)
@@ -365,7 +358,7 @@ for label, config in config_information.iteritems():
     antenna_pattern = config[:, 2]
 
     for value in config:
-        plot_data.write(str(value[0]) + ' ' + str(value[1]) + ' ' + str(value[2]) + ' ' + str(int(value[3])))
+        plot_data.write(str(value[0]) + ' ' + str(value[1]) + ' ' + str(value[2]) + ' ' + str(int(value[3])) + ' ' + str(value[4]))
         plot_data.write('\n')
 
     # Scatter plot of SNR vs. Error Regions
@@ -411,17 +404,3 @@ for label, config in config_information.iteritems():
 plt.savefig("figures/snr_vs_err_%s.png" % configuration)
 plot_data.close()
 
-if False:
-    # Set up colorbars
-    for label, cmap in cspecs.iteritems():
-        if not isinstance(cmap.colors, str):
-            cax = plt.gcf().add_axes([0.1, 0.1, 0.8, 0.05])
-            cb = colorbar.ColorbarBase(cax,
-                cmap=cmap.colors, norm=cmap._norm, orientation='horizontal')
-            if cmap.quant == "error_region":
-                label = r"Solid Angle $(deg)^2$ Area of $68\%$ Credible Region"
-            elif cmap.quant == "snr":
-                label = r"Network SNR"
-            colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
-
-    plt.savefig("figures/test_cmap.png")
