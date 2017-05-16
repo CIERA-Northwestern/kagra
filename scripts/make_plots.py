@@ -207,4 +207,3 @@ ax2.legend(loc='upper right', fontsize=7)
 #ax3.legend(loc='lower right', fontsize=7)
 
 plt.savefig("figures/%s_%s.png" % (network_to_plot, yvariable))
-

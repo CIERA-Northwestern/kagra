@@ -83,7 +83,7 @@ def parse_colorspecs(pspecs):
             out[label] = Plottable(cmap)
     return out
 
-_antenna_functions = ("network", "alignment", "dpf")
+_antenna_functions = ("network", "alignment", "dpf", "error_reg_bns", "error_reg_nsbh")
 _network = ("H1", "K1", "L1", "V1")
 
 argp = ArgumentParser()
@@ -93,9 +93,22 @@ argp.add_argument("-o", "--overplot", default=None, help="Overplot a function of
 argp.add_argument("-i", "--inj-xml", default=None, help="Path to the injection XML file.")
 argp.add_argument("-p", "--pathspecs", action="append", help="Add file glob paths to be parsed in the following way: \"(name)=(globspec)\", e.g. \"HLV=/path/to/skymaps/*/post/*\"")
 argp.add_argument("-c", "--colorspecs", action="append", help="Add color specs to be parsed in the following way: \"(name)=(colorspec)\", e.g. \"HLV=yellow\" or \"HKLV=snr,viridis\"")
+argp.add_argument("-f", "--file-stem", help="File stem for plotting output.")
+#argp.add_argument("-l", "--runlabels", action="store_true", help="Annotate each area with its run label.")
+argp.add_argument("-b", "--black-list", help="Skip events listed in this file.")
+argp.add_argument("-D", "--detector-planes", action="store_true", help="Overplot intersection of the detector planes with Earth fixed geography.")
 args = argp.parse_args()
 
-network = args.network
+if args.black_list is not None:
+    with open(args.black_list, "r") as bl:
+        blacklist = set(map(int, filter(lambda l: "#" != l[0], bl.readlines())))
+else:
+    blacklist = set()
+
+if not isinstance(args.network, tuple):
+    network = args.network.split(" ")
+else:
+    network = _network
 print "Will use network of %s" % ", ".join(network)
 
 np.seterr(under='ignore')
@@ -109,8 +122,8 @@ m.drawparallels(np.arange(-90., 90., 45.), labels=[1, 0, 0, 0],
                 labelstyle='+/-')
 m.drawmeridians(np.arange(0., 360., 90.))  #,labels=[0,0,0,1],labelstyle='+/-')
 net = "".join([n[0] for n in sorted(network)])
-plt.title("Sky Location Credible Intervals, %s Configuration" % net,
-          fontsize=20)
+#plt.title("Sky Location Credible Intervals, %s Configuration" % net,
+          #fontsize=20)
 m.drawmapboundary()
 
 # Arbitrary midnight UTC
@@ -119,6 +132,15 @@ ra_grid, dec_grid, net_pat, net_align, dpf = \
     net_antenna_pattern(gpstime, network)
 #print np.max(net_pat), np.max(net_align)
 
+# FIXME: hardcoded
+if args.underplot == "error_reg_nsbh":
+    from skyutils import _ref_h_nsbh
+    timing = get_timing_dict(dict(zip(network, [None] * len(network))), snr=12, sig=_ref_h_nsbh)
+else:
+    from skyutils import _ref_h_bns
+    timing = get_timing_dict(dict(zip(network, [None] * len(network))), snr=12, sig=_ref_h_bns)
+err_reg = solid_angle_error((ra_grid * np.pi / 180, dec_grid * np.pi / 180), timing)
+
 # FIXME: Still getting warnings, not sure how this is supposed to work.
 #net_pat, ra_grid = basemap.shiftgrid(180, net_pat.flatten(), ra_grid.flatten(), start=False)
 #net_pat_tmp, ra_grid_tmp = basemap.shiftgrid(180., net_pat.flatten(), ra_grid.flatten())
@@ -126,8 +148,8 @@ ra_grid, dec_grid, net_pat, net_align, dpf = \
 #net_pat_tmp = net_pat_tmp.reshape(dec_grid.shape)
 
 # Probably because we're viewing the sphere from "outside in".
-ra_grid -= 180
-dec_grid *= -1
+#ra_grid -= 180
+#dec_grid *= -1
 
 """
 # TODO: Make into a function and be consistent
@@ -151,16 +173,34 @@ ra_grid, dec_grid = m(ra_grid, dec_grid)
 #
 if args.underplot == "network":
     m.contourf(ra_grid, dec_grid, net_pat, 1000, cmap=matplotlib.cm.Greys_r)
-    #plt.savefig("net_pat.png")
 
 elif args.underplot == "dpf":
     m.contourf(ra_grid, dec_grid, dpf, 1000, cmap=matplotlib.cm.hsv,
                 vmin=-np.pi/4, vmax=np.pi/4)
-    #plt.savefig("net_dpf.png")
 
-elif args.underplot == "align":
+elif args.underplot == "alignment":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
-    #plt.savefig("net_align.png")
+
+elif args.underplot == "error_reg_bns" or args.underplot == "error_reg_nsbh":
+    err_reg *= (180 / np.pi)**2
+    err_reg = np.ma.masked_greater(err_reg, 100)
+    m.contourf(ra_grid, dec_grid, err_reg, 1000, cmap=matplotlib.cm.Greys, vmin=err_reg.min(), vmax=min(err_reg.max(), 100))
+    cb = m.colorbar()
+    cb.set_label(r"$\Omega_{err}$")
+
+if args.detector_planes:
+    for subnet in itertools.combinations(network, 3):
+        th, ph = detector_plane(subnet)
+        # Convert to basemap coordinates
+        ph -= np.pi
+        th = np.roll(th, -len(th)/2)
+        # Flip the latitudes (0, 180) -> (90, -90)
+        th -= np.pi / 2
+        th *= -1
+        th *= 180 / np.pi
+        ph *= 180 / np.pi
+        ph, th = m(ph, th)
+        m.plot(ph, th, 'r-')
 
 #
 # Gradient plots disabled for now
@@ -169,30 +209,24 @@ if False:
     gr_ra_grid, gr_dec_grid, gr_net_pat, _, _ = \
         net_antenna_pattern(gpstime, network, npts=20)
 
-    gr_ra_grid -= 180
-    gr_dec_grid *= -1
     gr_ra_grid, gr_dec_grid = m(gr_ra_grid, gr_dec_grid)
 
     net_grad = net_gradient(gr_net_pat, npts=20)
     m.quiver(gr_ra_grid, gr_dec_grid, net_grad[1], -net_grad[0], color="r")
-    #plt.savefig("net_pat.png")
 
 #
 # Overplot contours of the network antenna pattern
 #
 if args.overplot == "network":
     m.contour(ra_grid, dec_grid, net_pat, 10, cmap=matplotlib.cm.cool)
-    #plt.savefig("net_pat.png")
 
 elif args.overplot == "dpf":
     m.contour(ra_grid, dec_grid, dpf, 10, cmap=matplotlib.cm.cool,
                 vmin=-np.pi/4, vmax=np.pi/4)
-    #plt.savefig("net_dpf.png")
 
-elif args.overplot == "align":
+elif args.overplot == "alignment":
     m.contour(ra_grid, dec_grid, net_align, 10, cmap=matplotlib.cm.cool,
                 vmin=0, vmax=1)
-    #plt.savefig("net_align.png")
 
 #
 # Load injections
@@ -201,11 +235,17 @@ if args.inj_xml is not None:
     inj = load_injections(args.inj_xml)
     print "Loaded %d injections" % len(inj)
 
+plot_file = args.file_stem + ".png"
+
+if args.pathspecs is None:
+    plt.savefig(plot_file)
+    exit()
+
 cspecs = parse_colorspecs(args.colorspecs)
 for label, cmap in cspecs.iteritems():
     print label + " => " + str(cmap)
 
-error_regions = defaultdict(list)
+error_regions = [defaultdict(list), defaultdict(list), defaultdict(list)]
 pspecs = parse_pathspecs(args.pathspecs)
 for label, globpat in pspecs.iteritems():
 
@@ -217,28 +257,39 @@ for label, globpat in pspecs.iteritems():
     plt.figure(0)
     for filename in files:
         enum = get_event_num(filename)
-        print "Processing event %d" % enum
+        print "Processing event %d from file %s" % (enum, filename)
+        if enum in blacklist:
+            print "Event %d is listed in the black list, skipping." % enum
+            continue
 
         #
         # Generate vital statistics
         #
         gmst = inj[enum].geocent_end_time
         gmst = np.mod(gmst/3600., 24.)
+        gmst *= 180. / 12
+
+        """
+        ra_inj += (360 - gmst)
+        # basemap coordinate system is -180 -> 180
+        if ra_inj > 180:
+            ra_inj -= 360
+        #print ra_inj, dec_inj
+        m.scatter([ra_inj], [dec_inj], marker='x', color='m', s=50)
+        """
 
         sky_data, smap = create_table(filename)
         ns = healpy.npix2nside(len(smap))
         pix_size = healpy.nside2pixarea(ns, degrees=True)
 
         prb68 = np.searchsorted(sky_data["cumul"], 0.68)
+        prb90 = np.searchsorted(sky_data["cumul"], 0.90)
         prb95 = np.searchsorted(sky_data["cumul"], 0.95)
-        prb99 = np.searchsorted(sky_data["cumul"], 0.99)
 
-        # Reject regions which would pollute the plot
-        if prb68 * pix_size > 64:
-            print prb68 * pix_size
-            print "Skipping event %d, region too large... not converged?" % enum
-            #continue
-        error_regions[label].append(prb68 * pix_size)
+        error_regions[0][label].append(prb68 * pix_size)
+        error_regions[1][label].append(prb90 * pix_size)
+        error_regions[2][label].append(prb95 * pix_size)
+        assert error_regions[0][label][-1] < 1e3
 
         snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
         with open(snr, "r") as snrf:
@@ -249,9 +300,25 @@ for label, globpat in pspecs.iteritems():
 
         cmap = cspecs[label]
         if cmap.quant == "error_region":
-            linecolor = cmap(prb68 * pix_size)
+            linecolor = cmap(prb90 * pix_size)
         elif cmap.quant == "snr":
             linecolor = cmap(snrs["Network"])
+
+        #
+        # Expected error regions
+        #
+        ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
+        inj_loc = np.asarray((ra_inj, dec_inj))
+        inj_loc.shape = (2, 1, 1)
+        snr = snrs["Network"] / (len(snrs) - 1)
+        del snrs["Network"]
+        for d in snrs:
+            snrs[d] = None
+        timing = get_timing_dict(snrs, snr)
+        exp_err_reg = solid_angle_error(inj_loc, timing, inj[enum].geocent_end_time)
+        exp_err_reg = (180 / np.pi)**2 * np.squeeze(exp_err_reg)
+        print "Expected error region size vs realized:"
+        print exp_err_reg, prb68 * pix_size
 
         cache_fname = filename.replace("fits.gz", "intrp.npz")
         if os.path.exists(cache_fname):
@@ -262,35 +329,24 @@ for label, globpat in pspecs.iteritems():
                 sky_data["dec"], smap, npts=500)
             np.savez(cache_fname, [ra_int, dec_int, prob_int])
 
-        # Better idea, figure out by how much this shift the ra_int and shift
+        # Figure out by how much this shift the ra_int and shift
         # the z array by the opposite of that amount
-        ra_int = (-gmst + ra_int) * np.pi / 12
-        # Reverse... and undo the radians...
-        #ra_int = -ra_int * 180 / np.pi
-        ra_int = ra_int * 180 / np.pi
-        ra_int = np.where(ra_int < -180, ra_int + 360, ra_int)
-        ra_int = np.where(ra_int > 180, ra_int - 360, ra_int)
-
-        # ANNOYING!
-        while ra_int[0,0]/ra_int[0,-1] > 0:
-            ra_int = np.roll(ra_int, -1, axis=1)
-            prob_int = np.roll(prob_int, -1, axis=1)
-        ra_int *= -1
+        ra_int = ra_int * 180 / 12.
+        dra = ra_int[0,1] - ra_int[0,0]
+        # because of the healpix -> basemap coordinate system
+        # FIXME: Move this to the interpolator
+        prob_int = np.roll(prob_int, ra_int.shape[1]/2, axis=1)
+        # We roll negative because the skymap is sliding "backwards" in time
+        prob_int = np.roll(prob_int, -int(gmst / dra), axis=1)
 
         ra_int, dec_int = m(ra_int, dec_int)
 
-        m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
+        m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb90]], colors=(linecolor,), linewidths=0.5)
         # Debuggin
         #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
 
         # FIXME: temporary
-        plt.savefig("test.png")
-
-plt.figure(1)
-for label, err_reg in error_regions.iteritems():
-    yaxis = np.linspace(0, 1, len(err_reg))
-    plt.step(err_reg, yaxis, label=label)
-plt.savefig("error_regions.png")
+        #plt.savefig(plot_file)
 
 # Set up colorbars
 for label, cmap in cspecs.iteritems():
@@ -299,9 +355,28 @@ for label, cmap in cspecs.iteritems():
         cb = colorbar.ColorbarBase(cax,
             cmap=cmap.colors, norm=cmap._norm, orientation='horizontal')
         if cmap.quant == "error_region":
-            label = r"Solid Angle $(deg)^2$ Area of $68\%$ Credible Region"
+            label = r"Solid Angle $(deg)^2$ Area of $90\%$ Credible Region"
         elif cmap.quant == "snr":
             label = r"Network SNR"
         colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
 
-plt.savefig("test.png")
+plt.savefig(plot_file)
+
+import json
+error_region_plot = args.file_stem + "_error_regions.png"
+ls = ["-", "-.", "--"]
+for reg, err_reg in zip((68, 90, 95), error_regions):
+
+    error_region_file = args.file_stem + "_error_regions_%s.json" % str(reg)
+    with open(error_region_file, "w") as fout:
+        json.dump(err_reg, fout)
+
+    plt.figure(1)
+    for label, err_reg_dict in err_reg.iteritems():
+        err_reg = sorted(err_reg_dict)
+        yaxis = np.linspace(0, 1, len(err_reg))
+        plt.step(err_reg, yaxis, label=label + " %d%%" % reg, linestyle=ls[0])
+    ls.append(ls.pop(0))
+
+plt.legend(loc="lower right")
+plt.savefig(error_region_plot)

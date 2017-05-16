@@ -177,7 +177,6 @@ elif args.underplot == "align":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
     #plt.savefig("net_align.png")
 
-
 #
 # Overplot contours of the network antenna pattern
 #
@@ -339,7 +338,6 @@ for label, globpat in pspecs.iteritems():
 #outlier_file.close()
 #print outliers
 
-
 plt.figure(1)
 gs = gridspec.GridSpec(3, 3)
 gs.update(hspace=0.0, wspace=0.0)
@@ -403,4 +401,3 @@ for label, config in config_information.iteritems():
 
 plt.savefig("figures/snr_vs_err_%s.png" % configuration)
 plot_data.close()
-
