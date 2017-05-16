@@ -115,7 +115,9 @@ def iter_dets(dets, n=4, unique=True):
         net = "".join(sorted(set([d[0] for d in comb])))
         if unique and len(set(comb)) != n - 1:
             continue
-        if (comb[0] == comb[1]) or (comb[1] == comb[2]):
+        if (comb[0] == comb[1]) or (comb[2] == comb[3]):
+            continue
+        if comb[1] != comb[2]:
             continue
         # FIXME: It seems that the redundancy is actually required
         #if net in examined:
