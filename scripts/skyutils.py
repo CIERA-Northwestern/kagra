@@ -62,6 +62,7 @@ def net_antenna_pattern(gpstime, network, psi=0, npts=100, norm=False):
 
     psi_rad = 0
     i = 0
+    #import pdb; pdb.set_trace()
     for ra_rad, de_rad in zip(ra_grid.flat, dec_grid.flat):
         fp = [ComputeDetAMResponse(detectors[ifo].response, ra_rad, de_rad, psi_rad, gmst_rad)[0] for ifo in network]
         fx = [ComputeDetAMResponse(detectors[ifo].response, ra_rad, de_rad, psi_rad, gmst_rad)[1] for ifo in network]
@@ -86,12 +87,12 @@ def net_antenna_pattern(gpstime, network, psi=0, npts=100, norm=False):
     net_dpf = net_dpf.reshape(ra_grid.shape) / 2 # we multiplied by two above
 
     if norm:
-        net_pat /= np.sqrt(2) #* len(network)
+        net_pat /= len(network)
 
     return ra_grid, dec_grid, net_pat, net_align, net_dpf
 
 
-def net_antenna_pattern_point(gpstime, network, ra_rad, de_rad, psi=0, npts=100, norm=False):
+def net_antenna_pattern_point(gpstime, network, ra_rad, de_rad, psi=0, norm=False):
 
     """
     Only get the network antenna pattern at a given ra and dec of interest
@@ -127,10 +128,45 @@ def net_antenna_pattern_point(gpstime, network, ra_rad, de_rad, psi=0, npts=100,
     #net_dpf = net_dpf.reshape(ra_grid.shape) / 2 # we multiplied by two above
 
     if norm:
-        net_pat /= np.sqrt(2) #* len(network)
+        net_pat /= len(network)
 
     return net_pat, net_align, net_dpf
 
+
+def integrate_net_pat(gpstime, network, npts=100):
+
+    """
+    Calculate the squared network antenna pattern integrated over solid angle of the whole sky
+
+    gpstime -- time of event
+
+    network -- detector configuration
+
+    npts -- number of points at a given r.a.
+
+    Returns:
+    Double for integral of network antenna pattern squared over solid angle
+
+    """
+    network_factor = 0
+
+    # Find ra and dec points over the grid
+    gps = LIGOTimeGPS(gpstime)
+    gmst_rad = GreenwichMeanSiderealTime(gps)
+    ra_grid, dec_grid = _sph_grid(npts)
+
+    #import pdb; pdb.set_trace()
+
+    delta_ra = ra_grid[10][1] - ra_grid[10][0]
+    delta_dec = dec_grid[31][10] - dec_grid[30][10]
+
+    # Iterate over all points
+    for ra_rad in ra_grid[0]:
+        for dec_rad in dec_grid[:, 0]:
+            net_pat = net_antenna_pattern_point(gpstime, network, ra_rad, dec_rad)[0]
+            network_factor += (net_pat ** 2) * np.sin(dec_rad + np.pi/2) * delta_ra * delta_dec
+
+    return network_factor / (4 * np.pi)
 
 
 
