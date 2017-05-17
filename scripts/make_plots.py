@@ -22,7 +22,7 @@ from skyutils import *
 # Determine which plots to make
 argp = ArgumentParser()
 argp.add_argument("-n", "--network", default=None, help="Choices are all, HLV, 'HLV_to_HKLV', and 'HKLV_to_HIKLV'")
-argp.add_argument("-y", "--yaxis", default='net_pat', help="Choices are 'net_pat' and 'align'")
+argp.add_argument("-y", "--yaxis", default='net_pat', help="Choices are 'net_pat', 'align', and 'angle_err'")
 argp.add_argument("-i", "--hist", default='no_net_hist', help="Choices are 'no_net_hist' and 'net_hist'")
 args = argp.parse_args()
 
@@ -97,7 +97,8 @@ for runs in runs_to_plot:
     snr = runs[:, 1]
     antenna_pattern = runs[:, 2]
     run_numbers = runs[:, 3]
-    alignment = runs[:,4]
+    alignment = runs[:, 4]
+    angle_err = runs[:, 5]
     hist_color = colors_options.pop(0)
     statistics_color = colors_stats.pop(0)
     label = names.pop(0)
@@ -108,6 +109,8 @@ for runs in runs_to_plot:
         yaxis = antenna_pattern
     elif yvariable == 'align':
         yaxis = alignment
+    elif yvariable == 'angle_err':
+        yaxis = angle_err
 
     # Find points that aren't outliers for histograms
     err_reg_noout = []
@@ -148,6 +151,11 @@ for runs in runs_to_plot:
             ax1.set_ylim(0.0, 1.0)
             ax1.set_ylabel('Network Alignment Factor')
 
+        elif yvariable == 'angle_err':
+            ax1.set_ylim(0.0, None)
+            ax1.set_ylabel('Solid Angle Error')
+
+
         ax1.set_xlabel('Error Region (squared degrees)')
         ax1.set_xlim(1e-1, 1e5)
         ax1.set_xscale('log')
@@ -180,6 +188,8 @@ for runs in runs_to_plot:
         bins = np.linspace(0, 2, 20)
     elif yvariable == 'align':
         bins = np.linspace(0, 1, 20)
+    elif yvariable == 'angle_err':
+        bins = np.linspace(0, max(yaxis_noout), 20)
 
     if net_hist:
         ax3.hist(yaxis_noout, color=hist_color, histtype='stepfilled', bins=bins, orientation='horizontal', alpha=0.5)

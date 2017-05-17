@@ -200,6 +200,33 @@ def solid_angle_error(source_pos, network_timing, gps_time=_default_gps_time):
 
     return 4 * np.sqrt(2) * np.pi * lal.C_SI**2 * timing_sum / np.sqrt(del_omega_inv_sq)
 
+
+
+def solid_angle_error_point(ra, dec, network_timing, gps_time=_default_gps_time):
+    """
+    Schutz, 2011, eqn. 31 --- quoted from earlier Wen and Chen.
+
+    !!!!! - I need to go over this with Chris
+    """
+    del_omega_inv_sq = 0  #np.zeros(source_pos.shape[-2:])
+    # translate sources to utc midnight
+    #source_pos[0] -= seconds_since_utc_midnight(gps_time) / 3600. * np.pi / 12
+    source_vec = source_vec_from_pos(ra, dec)
+    for det_comb in iter_dets(network_timing.keys()):
+        timing = map(network_timing.__getitem__, det_comb)
+        # NOTE: We reverse the components because of the indexing, but doesn't
+        # really matter once we take the magnitude
+        r_1 = baseline(det_comb[1], det_comb[0])
+        r_2 = baseline(det_comb[3], det_comb[2])
+        det_plane = np.cross(r_1, r_2)
+        # FIXME: Bad, don't know why
+        det_plane[-1] *= -1
+        del_omega_inv_sq += np.prod(timing)**-2 * np.dot(det_plane, source_vec)**2
+    timing_sum = np.sum(1. / np.power(network_timing.values(), 2))
+
+    return 4 * np.sqrt(2) * np.pi * lal.C_SI**2 * timing_sum / np.sqrt(del_omega_inv_sq)
+
+
 def delay_to_plane(source_pos, network_timing):
     """
     Schutz, 2011, eqn. 31 --- quoted from earlier Wen and Chen.

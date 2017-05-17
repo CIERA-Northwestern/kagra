@@ -5,6 +5,12 @@ module load mpi/openmpi-1.8.3-intel2015.0
 source /projects/b1011/non-lsc/lscsoft-user-env.sh
 source /projects/b1011/ligo_project/lsc/lalinference_o2/etc/lscsoftrc
 
+
+# Make plots for HLV to HKLV
+python make_plots.py --network 'HLV_to_HKLV' -y 'angle_err'
+
+exit
+
 # Make plots with all configurations
 python make_plots.py --network 'all' -y 'align'
 
