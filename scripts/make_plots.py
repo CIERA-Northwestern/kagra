@@ -44,19 +44,33 @@ if network_to_plot == 'all':
     runs_to_plot = [runs_nokagra, runs_kagra, runs_india]
     names = ['HLV', 'HKLV', 'HIKLV']
     scatter_config = 'HIKLV'
+    colors_options = ['red', 'green', 'cyan']
+    colors_stats = ['red', 'black', 'blue']
+
 elif network_to_plot == 'HLV_to_HKLV':
     runs_to_plot = [runs_nokagra, runs_kagra]
     names = ['HLV', 'HKLV']
     scatter_config = 'HKLV'
+    colors_options = ['red', 'green']
+    colors_stats = ['red', 'black']
+
 elif network_to_plot == 'HKLV_to_HIKLV':
     runs_to_plot = [runs_kagra, runs_india]
     names = ['HKLV', 'HIKLV']
     scatter_config = 'HIKLV'
+    colors_options = ['green', 'cyan']
+    colors_stats = ['black', 'blue']
+
+
+
 elif network_to_plot == 'HLV':
     runs_to_plot = [runs_nokagra]
     names = ['HLV']
     scatter_config = 'HLV'
+    colors_options = ['red']
+    colors_stats = ['red']
 
+scatter_shape = ['o', '+', 's']
 
 
 # Set up plots
@@ -76,13 +90,6 @@ else:
     ax1 = plt.subplot(gs[10:, :-2])
     ax2 = plt.subplot(gs[0:10, :-2], sharex=ax1)
     ax3 = plt.subplot(gs[10:, 29]) #, sharey=ax1)
-
-#print outlier_list
-#print outlier_list[0]
-
-scatter_shape = ['o', '+', 's']
-colors_options = ['gray', 'cyan', 'white']
-colors_stats = ['black', 'blue', 'red']
 
 # Print median and 90% interval of err regions to file
 if network_to_plot == 'all':
@@ -153,7 +160,7 @@ for runs in runs_to_plot:
 
         elif yvariable == 'angle_err':
             ax1.set_ylim(0.0, None)
-            ax1.set_ylabel('Solid Angle Error')
+            ax1.set_ylabel('Expected Error Region (squared degrees)')
 
 
         ax1.set_xlabel('Error Region (squared degrees)')
