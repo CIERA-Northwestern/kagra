@@ -1,0 +1,410 @@
+#!/usr/bin/env python
+# Adapted from code developed by Carl Rodriguez
+
+import os
+import re
+import glob
+import itertools
+from collections import defaultdict
+from argparse import ArgumentParser
+
+import numpy as np
+
+from mpl_toolkits import basemap
+from mpl_toolkits.basemap import Basemap
+import matplotlib
+matplotlib.use("agg")
+from matplotlib import pyplot as plt
+from matplotlib import cm as mpl_cm
+from matplotlib import lines as mpl_lines
+from matplotlib import colorbar
+from matplotlib.gridspec import GridSpec
+
+from skyutils import *
+
+def grep_spin(fname):
+    if "spin0.4" in fname:
+        return "spin0.4"
+    elif "spin0.05" in fname:
+        return "spin0.05"
+    elif "spin0" in fname:
+        return "spin0"
+    else:
+        return grep_spin(get_event_num(fname, return_path=True))
+    raise ValueError("Could not find spin specifier in %s" % fname)
+
+# FIXME: Hardcoding paths for BNS runs with no event number
+_BNS_paths = {
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0_snr12/post": 0,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0_snr14/post": 1,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0_snr16/post": 2,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0_snr20/post": 3,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.05_snr12/post": 4,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.05_snr14/post": 5,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.05_snr16/post": 6,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.05_snr20/post": 7,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.4_snr12/post": 8,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.4_snr14/post": 9,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.4_snr16/post": 10,
+"/projects/b1011/kagra/BNS_runs/HIKLV/spin0.4_snr20/post": 11,
+
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0_snr12/post": 0,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0_snr14/post": 1,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0_snr16/post": 2,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0_snr20/post": 3,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.05_snr12/post": 4,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.05_snr14/post": 5,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.05_snr16/post": 6,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.05_snr20/post": 7,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.4_snr12/post": 8,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.4_snr14/post": 9,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.4_snr16/post": 10,
+"/projects/b1011/kagra/BNS_runs/HKLV/spin0.4_snr20/post": 11,
+
+"/projects/b1011/kagra/BNS_runs/HLV/spin0_snr12/post": 0,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0_snr14/post": 1,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0_snr16/post": 2,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0_snr20/post": 3,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.05_snr12/post": 4,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.05_snr14/post": 5,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.05_snr16/post": 6,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.05_snr20/post": 7,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.4_snr12/post": 8,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.4_snr14/post": 9,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.4_snr16/post": 10,
+"/projects/b1011/kagra/BNS_runs/HLV/spin0.4_snr20/post": 11,
+}
+
+# reverse lookup
+_BNS_paths.update(dict(zip(_BNS_paths.values(), _BNS_paths.keys())))
+
+def get_event_num(fname, return_path=False):
+    if os.path.dirname(fname) in _BNS_paths:
+        return _BNS_paths[os.path.dirname(fname)]
+    raise KeyError
+    m = re.findall("([0-9]+)", fname)
+    if return_path and int(m[-1]) in _BNS_paths:
+        return _BNS_paths[int(m[-1])]
+    return int(m[-1])
+
+def load_injections(fname):
+    from glue.ligolw import lsctables, utils, ligolw
+    lsctables.use_in(ligolw.LIGOLWContentHandler)
+    xmldoc = utils.load_filename(fname, contenthandler=ligolw.LIGOLWContentHandler)
+    return lsctables.SimInspiralTable.get_table(xmldoc)
+
+def parse_pathspecs(pspecs):
+    out = {}
+    for ps in pspecs:
+        label, cmap = ps.split("=")
+        try:
+            cm = plt.get_cmap(cmap)
+        except ValueError:
+            cm = cmap
+        out[label] = cmap
+    return out
+
+class Plottable(object):
+    _scales = {
+        "snr": {"vmin": 10, "vmax": 20},
+        "error_region": {"vmin": 0, "vmax": 64},
+        None: {"vmin": 0, "vmax": 64}
+    }
+
+    def __init__(self, colors, quant=None):
+        self.colors = colors
+        self.quant = quant
+        self._init_cmaps()
+
+    def _init_cmaps(self):
+        try:
+            self.colors = plt.get_cmap(self.colors)
+            self._norm = \
+                matplotlib.colors.Normalize(**Plottable._scales[self.quant])
+        except ValueError:
+            self._norm = None
+
+    def __call__(self, val):
+        if isinstance(self.colors, str):
+            return self.colors
+        return self.colors(self._norm(val))
+
+    def __repr__(self):
+        if isinstance(self.colors, str):
+            return self.colors
+        return self.colors.name + \
+            " (%f, %f)" % (self._norm.vmin, self._norm.vmax)
+
+def parse_colorspecs(pspecs):
+    out = {}
+    for ps in pspecs:
+        label, cmap = ps.split("=")
+        try:
+            quant, cmap = cmap.split(",")
+            out[label] = Plottable(cmap, quant)
+        except ValueError:
+            out[label] = Plottable(cmap)
+    return out
+
+_antenna_functions = ("network", "alignment", "dpf", "error_reg")
+_network = ("H1", "K1", "L1", "V1")
+
+argp = ArgumentParser()
+argp.add_argument("-n", "--network", default=_network, help="Network of instruments to use for antenna based calculations. Default is %s" % ", ".join(_network))
+argp.add_argument("-u", "--underplot", default=None, help="Underplot a function of the sky location as a continuous gradient. Valid choices are %s" % ", ".join(_antenna_functions))
+argp.add_argument("-o", "--overplot", default=None, help="Overplot a function of the sky location as discrete contours. Valid choices are %s" % ", ".join(_antenna_functions))
+argp.add_argument("-i", "--inj-xml", default=None, help="Path to the injection XML file.")
+argp.add_argument("-p", "--pathspecs", action="append", help="Add file glob paths to be parsed in the following way: \"(name)=(globspec)\", e.g. \"HLV=/path/to/skymaps/*/post/*\"")
+argp.add_argument("-c", "--colorspecs", action="append", help="Add color specs to be parsed in the following way: \"(name)=(colorspec)\", e.g. \"HLV=yellow\" or \"HKLV=snr,viridis\"")
+argp.add_argument("-f", "--file-stem", help="File stem for plotting output.")
+#argp.add_argument("-l", "--runlabels", action="store_true", help="Annotate each area with its run label.")
+argp.add_argument("-b", "--black-list", help="Skip events listed in this file.")
+args = argp.parse_args()
+
+if args.black_list is not None:
+    with open(args.black_list, "r") as bl:
+        blacklist = set(map(int, filter(lambda l: "#" != l[0], bl.readlines())))
+else:
+    blacklist = set()
+
+if not isinstance(args.network, tuple):
+    network = args.network.split(" ")
+else:
+    network = _network
+print "Will use network of %s" % ", ".join(network)
+
+np.seterr(under='ignore')
+
+#
+# Load injections
+#
+if args.inj_xml is not None:
+    inj = load_injections(args.inj_xml)
+    print "Loaded %d injections" % len(inj)
+
+plot_file = args.file_stem + ".png"
+
+cspecs = parse_colorspecs(args.colorspecs)
+for label, cmap in cspecs.iteritems():
+    print label + " => " + str(cmap)
+
+error_regions = [defaultdict(dict), defaultdict(dict), defaultdict(dict)]
+pspecs = parse_pathspecs(args.pathspecs)
+n_nets = len(pspecs)
+plt.figure(0)
+# Multiply by three to get several separate columns for colorbars on the right
+gs = GridSpec(3, 3 * (n_nets + 1))
+gs.update(wspace=0, hspace=0)
+for net_idx, (label, globpat) in enumerate(pspecs.iteritems()):
+
+    print label + " => " + globpat
+
+    files = glob.glob(globpat)
+    print "Globbed %d files for pattern %s" % (len(files), globpat)
+
+    i = 0
+    for key, filegroup in itertools.groupby(sorted(files, key=grep_spin), grep_spin):
+        ax = plt.subplot(gs[net_idx,3*i:3*(i+1)])
+        if i == 0:
+            plt.ylabel(label)
+        if label == pspecs.keys()[0]:
+            plt.xlabel(r"$a_{1,2} = %s$" % key[4:])
+            ax.xaxis.set_label_position('top')
+        i += 1
+
+        m = Basemap(projection='cyl', \
+                    llcrnrlat=-15, urcrnrlat=-5, llcrnrlon=-165, urcrnrlon=-155)
+        m.drawparallels(np.arange(-90., 90., 45.), labels=[1, 0, 0, 0],
+                    labelstyle='+/-')
+        m.drawmeridians(np.arange(0., 360., 45.))  #,labels=[0,0,0,1],labelstyle='+/-')
+
+        m.drawmapboundary()
+        m.drawcoastlines(linewidth=0.5)
+        net = "".join([n[0] for n in sorted(network)])
+        #plt.title("Sky Location Credible Intervals, %s Configuration" % net,
+                  #fontsize=20)
+        m.drawmapboundary()
+
+        # Arbitrary midnight UTC
+        gpstime = 1e9 - (1e9 % (3600 * 24))
+        ra_grid, dec_grid, net_pat, net_align, dpf = \
+            net_antenna_pattern(gpstime, network)
+        #print np.max(net_pat), np.max(net_align)
+
+        # FIXME: hardcoded
+        from skyutils import _ref_h_bns
+        timing = get_timing_dict(dict(zip(network, [None] * len(network))), snr=12, sig=_ref_h_bns)
+        err_reg = solid_angle_error((ra_grid * np.pi / 180, dec_grid * np.pi / 180), timing)
+
+        ra_grid, dec_grid = m(ra_grid, dec_grid)
+
+        #
+        # Underplot various network quantities
+        #
+        if args.underplot == "network":
+            m.contourf(ra_grid, dec_grid, net_pat, 1000, cmap=matplotlib.cm.Greys_r)
+
+        elif args.underplot == "dpf":
+            m.contourf(ra_grid, dec_grid, dpf, 1000, cmap=matplotlib.cm.hsv,
+                        vmin=-np.pi/4, vmax=np.pi/4)
+
+        elif args.underplot == "alignment":
+            m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
+
+        elif args.underplot == "error_reg":
+            m.contourf(ra_grid, dec_grid, np.log10(err_reg * 180 * 90 / np.pi), 1000, cmap=matplotlib.cm.bone_r)
+            m.colorbar()
+
+        #
+        # Overplot contours of the network antenna pattern
+        #
+        if args.overplot == "network":
+            m.contour(ra_grid, dec_grid, net_pat, 10, cmap=matplotlib.cm.cool)
+
+        elif args.overplot == "dpf":
+            m.contour(ra_grid, dec_grid, dpf, 10, cmap=matplotlib.cm.cool,
+                        vmin=-np.pi/4, vmax=np.pi/4)
+
+        elif args.overplot == "alignment":
+            m.contour(ra_grid, dec_grid, net_align, 10, cmap=matplotlib.cm.cool,
+                        vmin=0, vmax=1)
+
+        plt_inj = True
+        for filename in filegroup:
+            try:
+                enum = get_event_num(filename)
+            except KeyError:
+                print "Skipping file %s" % filename
+                continue
+            print "Processing event %d" % enum
+            if enum in blacklist:
+                print "Event %d is listed in the black list, skipping." % enum
+                continue
+            print filename
+
+            #
+            # Generate vital statistics
+            #
+            gmst = inj[enum].geocent_end_time
+            gmst = np.mod(gmst/3600., 24.)
+            gmst *= 180. / 12
+
+            ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
+            ra_inj *= 180 / np.pi
+            dec_inj *= 180 / np.pi
+            # Shift it back to midnight UTC
+            ra_inj += (360 - gmst)
+            # basemap coordinate system is -180 -> 180
+            if ra_inj > 180:
+                ra_inj -= 360
+            m.scatter([ra_inj], [dec_inj], marker='x', color='m', s=50)
+            plt.savefig(plot_file)
+
+            sky_data, smap = create_table(filename)
+            ns = healpy.npix2nside(len(smap))
+            pix_size = healpy.nside2pixarea(ns, degrees=True)
+
+            prb68 = np.searchsorted(sky_data["cumul"], 0.68)
+            prb90 = np.searchsorted(sky_data["cumul"], 0.90)
+            prb95 = np.searchsorted(sky_data["cumul"], 0.95)
+
+            error_regions[0][label][key + "_" + str(enum)] = prb68 * pix_size
+            error_regions[1][label][key + "_" + str(enum)] = prb90 * pix_size
+            error_regions[2][label][key + "_" + str(enum)] = prb95 * pix_size
+            assert prb90 * pix_size < 1e3
+
+            cmap = cspecs[label]
+            if cmap.quant == "error_region":
+                linecolor = cmap(prb90 * pix_size)
+            elif cmap.quant == "snr":
+                snr = "/".join(filename.split("/")[:-2]) + "/snr.txt"
+                with open(snr, "r") as snrf:
+                    snrs = dict([map(str.strip, l.split(":")) for l in snrf.readlines()])
+                for k in snrs:
+                    snrs[k] = float(snrs[k])
+                print snrs
+                linecolor = cmap(snrs["Network"])
+
+            #
+            # Expected error regions
+            #
+            ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
+            inj_loc = np.asarray((ra_inj, dec_inj))
+            inj_loc.shape = (2, 1, 1)
+            snr = snrs["Network"] / (len(snrs) - 1)
+            del snrs["Network"]
+            for d in snrs:
+                snrs[d] = None
+            timing = get_timing_dict(snrs, snr)
+            exp_err_reg = solid_angle_error(inj_loc, timing, inj[enum].geocent_end_time)
+            exp_err_reg = (180 / np.pi)**2 * np.squeeze(exp_err_reg)[0]
+            print "Expected error region size vs realized:"
+            print exp_err_reg, prb68 * pix_size
+
+            #
+            # Load / Interpolate map
+            #
+            cache_fname = filename.replace("fits.gz", "intrp.npz")
+            if os.path.exists(cache_fname):
+                print "Loading cached interpolated map: %s" % cache_fname
+                ra_int, dec_int, prob_int = dict(np.load(cache_fname))["arr_0"]
+            else:
+                ra_int, dec_int, prob_int = interpolate_healpix_map(sky_data["ra"],
+                    sky_data["dec"], smap, npts=500)
+                np.savez(cache_fname, [ra_int, dec_int, prob_int])
+
+            # figure out by how much this shift the ra_int and shift
+            # the z array by the opposite of that amount
+            ra_int = ra_int * 180 / 12.
+
+            dra = ra_int[0,1] - ra_int[0,0]
+            # because of the healpix -> basemap coordinate system
+            prob_int = np.roll(prob_int, ra_int.shape[1]/2, axis=1)
+            # We roll negative because the skymap is sliding "backwards" in time
+            prob_int = np.roll(prob_int, -int(gmst / dra), axis=1)
+
+            ra_int, dec_int = m(ra_int, dec_int)
+
+            m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb90]], colors=(linecolor,), linewidths=0.5)
+            # Debuggin
+            #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
+
+            # FIXME: temporary
+            #plt.savefig(plot_file)
+
+# Set up colorbars
+for label, cmap in cspecs.iteritems():
+    if not isinstance(cmap.colors, str):
+        cax = plt.subplot(gs[:,3*n_nets])
+        cb = colorbar.ColorbarBase(cax,
+            cmap=cmap.colors, norm=cmap._norm, orientation='vertical')
+        if cmap.quant == "error_region":
+            label = r"Solid Angle $(deg)^2$ Area of $90\%$ Credible Region"
+        elif cmap.quant == "snr":
+            label = r"Network SNR"
+        colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
+
+#plt.tight_layout()
+#plt.subplots_adjust(hspace=0, wspace=0)
+plt.savefig(plot_file)
+
+import json
+error_region_plot = args.file_stem + "_error_regions.png"
+ls = ["-", "-.", "--"]
+colors = {"HLV": 'r', "HKLV": 'g', "HIKLV": 'c'}
+for reg, err_reg in zip((68, 90, 95), error_regions):
+
+    error_region_file = args.file_stem + "_error_regions_%s.json" % str(reg)
+    with open(error_region_file, "w") as fout:
+        json.dump(err_reg, fout)
+
+    plt.figure(1)
+    for label, err_reg_dict in err_reg.iteritems():
+        color = colors[label.split("_")[0]]
+        err_reg = sorted(err_reg_dict.values())
+        yaxis = np.linspace(0, 1, len(err_reg))
+        plt.step(err_reg, yaxis, label=label + " %d%%" % reg, color=color, linestyle=ls[0])
+    ls.append(ls.pop(0))
+
+plt.legend(loc="lower right")
+plt.savefig(error_region_plot)

@@ -21,8 +21,16 @@ from skyutils import *
 
 # Determine which plots to make
 argp = ArgumentParser()
-argp.add_argument("-n", "--network", default=None, help="Choices are all, 'HLV_to_HKLV', and 'HKLV_to_HIKLV'")
+argp.add_argument("-n", "--network", default=None, help="Choices are all, HLV, 'HLV_to_HKLV', and 'HKLV_to_HIKLV'")
+argp.add_argument("-y", "--yaxis", default='net_pat', help="Choices are 'net_pat', 'align', and 'angle_err'")
+argp.add_argument("-i", "--hist", default='no_net_hist', help="Choices are 'no_net_hist' and 'net_hist'")
 args = argp.parse_args()
+
+histogram_type = args.hist
+if histogram_type == 'no_net_hist':
+    net_hist = False
+elif histogram_type == 'net_hist':
+    net_hist = True
 
 network_to_plot = args.network
 
@@ -30,42 +38,62 @@ runs_kagra = np.loadtxt('err_snr_antenna_HKLV')
 runs_nokagra = np.loadtxt('err_snr_antenna_HLV')
 runs_india = np.loadtxt('err_snr_antenna_HIKLV')
 
-#outlier_list = np.loadtxt('outliers_HIKLV')
-outlier_list = np.loadtxt('outliers_HLV')
+outlier_list = np.loadtxt('outliers')
 
 if network_to_plot == 'all':
     runs_to_plot = [runs_nokagra, runs_kagra, runs_india]
     names = ['HLV', 'HKLV', 'HIKLV']
     scatter_config = 'HIKLV'
+    colors_options = ['red', 'green', 'cyan']
+    colors_stats = ['red', 'black', 'blue']
+
 elif network_to_plot == 'HLV_to_HKLV':
     runs_to_plot = [runs_nokagra, runs_kagra]
     names = ['HLV', 'HKLV']
     scatter_config = 'HKLV'
+    colors_options = ['red', 'green']
+    colors_stats = ['red', 'black']
+
 elif network_to_plot == 'HKLV_to_HIKLV':
     runs_to_plot = [runs_kagra, runs_india]
     names = ['HKLV', 'HIKLV']
     scatter_config = 'HIKLV'
+    colors_options = ['green', 'cyan']
+    colors_stats = ['black', 'blue']
+
+
+
 elif network_to_plot == 'HLV':
     runs_to_plot = [runs_nokagra]
     names = ['HLV']
     scatter_config = 'HLV'
+    colors_options = ['red']
+    colors_stats = ['red']
 
+scatter_shape = ['o', '+', 's']
 
 
 # Set up plots
 plt.figure(1)
-gs = gridspec.GridSpec(3, 3)
-gs.update(hspace=0.0, wspace=0.0)
-ax1 = plt.subplot(gs[1:, :-1])
-ax2 = plt.subplot(gs[0, :-1], sharex=ax1)
-ax3 = plt.subplot(gs[1:, 2], sharey=ax1)
+#gs = gridspec.GridSpec(3, 3)
+#gs.update(hspace=0.0, wspace=0.0)
+if net_hist:
+    gs = gridspec.GridSpec(3, 3)
+    gs.update(hspace=0.0, wspace=0.0)
+    ax1 = plt.subplot(gs[1:, :-1])
+    ax2 = plt.subplot(gs[0, :-1], sharex=ax1)
+    #if net_hist:
+    ax3 = plt.subplot(gs[1:, 2], sharey=ax1)
+else:
+    gs = gridspec.GridSpec(30, 30)
+    gs.update(hspace=0.0, wspace=0.0)
+    ax1 = plt.subplot(gs[10:, :-2])
+    ax2 = plt.subplot(gs[0:10, :-2], sharex=ax1)
+    ax3 = plt.subplot(gs[10:, 29]) #, sharey=ax1)
 
-#print outlier_list
-#print outlier_list[0]
-
-scatter_shape = ['o', '+', 's']
-colors_options = ['gray', 'cyan', 'white']
-colors_stats = ['black', 'blue', 'red']
+# Print median and 90% interval of err regions to file
+if network_to_plot == 'all':
+    interval_file = open('median_and_90conf', 'w')
 
 
 for runs in runs_to_plot:
@@ -76,20 +104,30 @@ for runs in runs_to_plot:
     snr = runs[:, 1]
     antenna_pattern = runs[:, 2]
     run_numbers = runs[:, 3]
+    alignment = runs[:, 4]
+    angle_err = runs[:, 5]
     hist_color = colors_options.pop(0)
     statistics_color = colors_stats.pop(0)
     label = names.pop(0)
 
+    yvariable = args.yaxis
+
+    if yvariable == 'net_pat':
+        yaxis = antenna_pattern
+    elif yvariable == 'align':
+        yaxis = alignment
+    elif yvariable == 'angle_err':
+        yaxis = angle_err
+
     # Find points that aren't outliers for histograms
     err_reg_noout = []
-    antenna_pattern_noout = []
+    yaxis_noout = []
 
     # FIXME: list comprehension
     for index, enum in enumerate(run_numbers):
         if enum not in outlier_list:
             err_reg_noout.append(err_reg[index])
-            antenna_pattern_noout.append(antenna_pattern[index])
-
+            yaxis_noout.append(yaxis[index])
 
 
     #Scatter plot of SNR vs. Error Regions
@@ -100,84 +138,89 @@ for runs in runs_to_plot:
 
         nonoutlier_marker = scatter_shape.pop(0)
         outlier_marker = scatter_shape.pop(0)
+        first_plotted_point = True
         for index, enum in enumerate(run_numbers):
-            if enum in outlier_list:
-                marker = outlier_marker
-            #elif err_reg[index] > 1000:
-            #    print str(int(enum)) + ' has an error region of ' + str(err_reg[index]) + ' and is not on the blacklist'
-            #    print runs[index, :]
-            #    marker = 's'
-            else:
+            if enum not in outlier_list:
                 marker = nonoutlier_marker
-            scatter = ax1.scatter(err_reg[index], antenna_pattern[index], marker=marker, c=smap.to_rgba(snr[index]), edgecolors='None', cmap='viridis')
+                if first_plotted_point:
+                    scatter = ax1.scatter(err_reg[index], yaxis[index], marker=marker, c=smap.to_rgba(snr[index]), edgecolors='None', cmap='viridis', label=scatter_config)
+                    first_plotted_point = False
+                else:
+                    scatter = ax1.scatter(err_reg[index], yaxis[index], marker=marker, c=smap.to_rgba(snr[index]), edgecolors='None', cmap='viridis')
+
+
+
+        if yvariable == 'net_pat':
+            ax1.set_ylim(0.0, 2)
+            ax1.set_ylabel('Network Antenna Pattern')
+
+        elif yvariable == 'align':
+            ax1.set_ylim(0.0, 1.0)
+            ax1.set_ylabel('Network Alignment Factor')
+
+        elif yvariable == 'angle_err':
+            ax1.set_ylim(0.0, None)
+            ax1.set_ylabel('Expected Error Region (squared degrees)')
+
 
         ax1.set_xlabel('Error Region (squared degrees)')
-        ax1.set_ylabel('Network Antenna Pattern')
         ax1.set_xlim(1e-1, 1e5)
-        ax1.set_ylim(0.0, 1.4)
         ax1.set_xscale('log')
 
     # Histogram of Error Regions
     ax2.hist(err_reg_noout, color=hist_color, histtype='stepfilled', bins=np.logspace(-1, 5, 20), alpha=0.5, label=label)
     ax2.tick_params(axis='x', top='on', bottom='on', labelbottom='off', labeltop='off')
-    ax2.set_ylabel('Count')
+    #ax2.set_ylabel('Count')
     nbins = len(ax1.get_xticklabels())
     ax2.yaxis.set_major_locator(MaxNLocator(nbins=nbins, prune='lower', integer=True))
+    ax2.get_yaxis().set_ticks([])
+
 
     # Find the median and 90% interval of Error Region histograms
     err_med = np.percentile(err_reg_noout, 50)
-    err_95 = np.percentile(err_reg_noout, 95)
-    err_5 = np.percentile(err_reg_noout, 5)
-    ax2.axvline(x=err_med, color=statistics_color, linewidth=2)
-    ax2.axvline(x=err_95, color=statistics_color, linewidth=2, ls='-.')
-    ax2.axvline(x=err_5, color=statistics_color, linewidth=2, ls='-.')
+    err_90 = np.percentile(err_reg_noout, 90)
+    #err_5 = np.percentile(err_reg_noout, 5)
+    ax2.axvline(x=err_med, color=statistics_color, linewidth=2, label=(label + ' Median'))
+    ax2.axvline(x=err_90, color=statistics_color, linewidth=2, ls='-.', label=(label + ' 90% Conf.'))
+    #ax2.axvline(x=err_, color=statistics_color, linewidth=2, ls='-.')
+
+    # Write the 50% and 90% regions to file
+    if network_to_plot == 'all':
+        interval_file.write('Network: %s, Median: %.2f, 90 Percent Confidence Interval: %.2f' % (
+            label, err_med, err_90))
+        interval_file.write('\n')
 
     # Histogram of Antenna Patterns
-    ax3.hist(antenna_pattern, color=hist_color, histtype='stepfilled', bins=np.linspace(0, 1, 20), orientation='horizontal', alpha=0.5)
-    ax3.tick_params('y', left='on', right='on', labelleft='off', labelright='off')
-    ax3.set_xlabel('Count')
-    ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
-    xticks = ax3.xaxis.get_major_ticks()
-    xticks[0].label1.set_visible(False)
+    if yvariable == 'net_pat':
+        bins = np.linspace(0, 2, 20)
+    elif yvariable == 'align':
+        bins = np.linspace(0, 1, 20)
+    elif yvariable == 'angle_err':
+        bins = np.linspace(0, max(yaxis_noout), 20)
+
+    if net_hist:
+        ax3.hist(yaxis_noout, color=hist_color, histtype='stepfilled', bins=bins, orientation='horizontal', alpha=0.5)
+        ax3.tick_params('y', left='on', right='on', labelleft='off', labelright='off')
+        #ax3.set_xlabel('Count')
+        ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
+        xticks = ax3.xaxis.get_major_ticks()
+        xticks[0].label1.set_visible(False)
+        ax3.get_xaxis().set_ticks([])
 
 
-    # Find the mean and standard deviation of antenna pattern histograms
-    #net_mean = np.mean(antenna_pattern)
-    #net_stdev = np.std(antenna_pattern)
-    #ax3.axhline(y=net_mean, color=statistics_color, linewidth=2)
-    #ax3.axhline(y=(net_mean + net_stdev), color=statistics_color, linewidth=2, ls='dashed')
-    #ax3.axhline(y=(net_mean - net_stdev), color=statistics_color, linewidth=2, ls='dashed')
-
-    net_med = np.percentile(antenna_pattern_noout, 50)
-    net_95 = np.percentile(antenna_pattern_noout, 95)
-    net_5 = np.percentile(antenna_pattern_noout, 5)
-    ax3.axhline(y=net_med, color=statistics_color, linewidth=2, label=(label + ' Median'))
-    ax3.axhline(y=net_95, color=statistics_color, linewidth=2, ls='-.', label=(label + ' 90% Conf.'))
-    ax3.axhline(y=net_5, color=statistics_color, linewidth=2, ls='-.')
-
+# Close interval file
+if network_to_plot == 'all':
+    interval_file.close()
 
 # Overall plot features
-
-if network_to_plot == 'all':
-    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for HLV, HKLV, and HIKLV with Scatterplot of HIKLV')
-elif network_to_plot == 'HLV_to_HKLV':
-    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for HLV and HKLV with Scatterplot of HKLV')
-elif network_to_plot == 'HKLV_to_HIKLV':
-    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for HKLV and HIKLV with Scatterplot of HIKLV')
-elif network_to_plot == 'HLV':
-    plt.suptitle('SNR, Error Regions, and Network Antenna Pattern for HLV')
 smap.set_array([0, 1])
-cbar = plt.colorbar(smap, label='Network SNR')  # FIXME: this is not a common scale
-cbar.ax.tick_params(labelsize=10)
-#ax1.legend(loc='upper left', fontsize=7)
-ax2.legend(loc='upper left', fontsize=7)
-ax3.legend(fontsize=7)
+if net_hist:
+    cbar = plt.colorbar(smap, label='Network SNR')
+else:
+    cbar = plt.colorbar(smap, label='Network SNR', cax=ax3) #ax=ax1, orientation='horizontal')
+cbar.ax.tick_params(labelsize=7)
+ax1.legend(loc='upper right', fontsize=7)
+ax2.legend(loc='upper right', fontsize=7)
+#ax3.legend(loc='lower right', fontsize=7)
 
-if network_to_plot == 'all':
-    plt.savefig("figures/snr_vs_err_allconfigs.png")
-elif network_to_plot == 'HLV_to_HKLV':
-    plt.savefig("figures/snr_vs_err_HLV_to_HKLV.png")
-elif network_to_plot == 'HKLV_to_HIKLV':
-    plt.savefig("figures/snr_vs_err_HKLV_to_HIKLV.png")
-elif network_to_plot == 'HLV':
-    plt.savefig('figures/snr_vs_err_HLV.png')
+plt.savefig("figures/%s_%s.png" % (network_to_plot, yvariable))

@@ -1,0 +1,112 @@
+#!/usr/bin/env python
+import sys
+
+import numpy
+
+import matplotlib
+matplotlib.use("agg")
+from matplotlib import pyplot
+
+from glue.ligolw import utils, ligolw, lsctables
+lsctables.use_in(ligolw.LIGOLWContentHandler)
+
+import skyutils
+from skyutils import _ref_h_bns, _ref_h_nsbh, _ref_h_nsbh_ms
+
+#dets = {"H1": None, "L1": None, "V1": None}
+dets = {"H1": None, "L1": None, "V1": None}
+net = "".join(sorted(d[0] for d in dets))
+grid = skyutils._sph_grid(100)
+
+timing = {"H1": 0.06e-3, "L1": 0.06e-3, "V1": 0.06e-3}
+print timing
+err_reg = numpy.squeeze(skyutils.solid_angle_error(grid, timing))
+err_reg *= (180. / numpy.pi)**2
+print "Bad comparison of 68% with 90%"
+print "Minimum error region for comparison with Fairhurst (1 deg^2): %2.3f" % err_reg.min()
+
+# BNS: SNR of 10 *per detector*
+timing = skyutils.get_timing_dict(dets, 10., sig=_ref_h_bns)
+print timing
+err_reg = numpy.squeeze(skyutils.solid_angle_error(grid, timing))
+err_reg *= (180. / numpy.pi)**2
+print "Median 1sig error region for HLV network: %2.3f" % numpy.median(err_reg)
+print "Worst 1sig error region for HLV network: %2.3f" % err_reg.max()
+print "Minimum 1sig error region for HLV network: %2.3f" % err_reg.min()
+# Eqn. 35
+fairhurst_err_reg = 20 * (timing["L1"] / 0.25e-3) * (numpy.sqrt(2*timing["L1"]**2 + timing["V1"]**2) / numpy.sqrt(3) / 0.25e-3)
+print "Steve says 90%%: %2.3f" %  fairhurst_err_reg
+
+colors = {"HLV": 'r', "HKLV": 'g', "HIKLV": 'b'}
+linestyle = {10: '-', 14: '-.', 20: '--'}
+
+for n in (tuple(), ("K1",), ("K1", "I1")):
+    dets = {"H1": None, "L1": None, "V1": None}
+    for ni in n:
+        dets[ni] = None
+    net = "".join(sorted(d[0] for d in dets))
+    print "--- Network: %s ---" % net
+
+    print "--- Expected error region for non-spinning BNS ---"
+    for net_snr in (10, 12, 14, 16, 20):
+        snr = net_snr / numpy.sqrt(len(dets))
+
+        timing = skyutils.get_timing_dict(dets, snr, sig=_ref_h_bns)
+        err_reg = numpy.squeeze(skyutils.solid_angle_error(grid, timing))
+        err_reg *= (180. / numpy.pi)**2
+        print "net snr %f: %f / %f / %f" % (net_snr, err_reg.min(), numpy.median(err_reg), err_reg.max())
+        if net_snr in linestyle:
+            pyplot.subplot(3, 1, 1)
+            err_reg = sorted(err_reg.flatten())
+            yaxis = numpy.linspace(0, 1, len(err_reg))
+            #pyplot.step(err_reg, yaxis, label="BNS %s, %d" % (net, net_snr), color=colors[net], linestyle=linestyle[net_snr])
+            pyplot.step(numpy.log10(err_reg), yaxis, label="BNS %s, %d" % (net, net_snr), color=colors[net], linestyle=linestyle[net_snr])
+            pyplot.xlim(-0.1, 2)
+
+    print "--- Expected error region for non-spinning NSBH ---"
+    for net_snr in (10, 12, 14, 16, 20):
+        snr = net_snr / numpy.sqrt(len(dets))
+
+        timing = skyutils.get_timing_dict(dets, snr, sig=_ref_h_nsbh)
+        err_reg = numpy.squeeze(skyutils.solid_angle_error(grid, timing))
+        err_reg *= (180. / numpy.pi)**2
+        print "net snr %f: %f / %f / %f" % (net_snr, err_reg.min(), numpy.median(err_reg), err_reg.max())
+        if net_snr in linestyle:
+            pyplot.subplot(3, 1, 2)
+            err_reg = sorted(err_reg.flatten())
+            yaxis = numpy.linspace(0, 1, len(err_reg))
+            #pyplot.step(err_reg, yaxis, label="NSBH %s, %d" % (net, net_snr), color=colors[net], linestyle=linestyle[net_snr])
+            pyplot.step(numpy.log10(err_reg), yaxis, label="NSBH %s, %d" % (net, net_snr), color=colors[net], linestyle=linestyle[net_snr])
+            pyplot.xlim(-0.1, 2)
+
+    print "--- Expected error region for spinning NSBH (a_z=0.9) ---"
+    for net_snr in (10, 12, 14, 16, 20):
+        snr = net_snr / numpy.sqrt(len(dets))
+
+        timing = skyutils.get_timing_dict(dets, snr, sig=_ref_h_nsbh_ms)
+        err_reg = numpy.squeeze(skyutils.solid_angle_error(grid, timing))
+        err_reg *= (180. / numpy.pi)**2
+        print "net snr %f: %f / %f / %f" % (net_snr, err_reg.min(), numpy.median(err_reg), err_reg.max())
+        if net_snr in linestyle:
+            pyplot.subplot(3, 1, 3)
+            err_reg = sorted(err_reg.flatten())
+            yaxis = numpy.linspace(0, 1, len(err_reg))
+            pyplot.step(numpy.log10(err_reg), yaxis, label="NSBHs %s, %d" % (net, net_snr), color=colors[net], linestyle=linestyle[net_snr])
+            pyplot.xlim(-0.1, 2)
+
+for i in range(1, 4):
+    pyplot.subplot(3, 1, i)
+    pyplot.axhline(0.5, color='k', alpha=0.5)
+    pyplot.legend(ncol=3, fontsize=8, loc="lower right")
+    #pyplot.semilogx()
+pyplot.subplots_adjust(hspace=0)
+pyplot.savefig("exp_error_region_comp.png")
+
+print "Ratio of median NSBH to BNS (non spinning)"
+for snr in (10, 12, 14, 16, 20):
+    timing_bns = skyutils.get_timing_dict(dets, snr, sig=_ref_h_bns)
+    timing_nsbh = skyutils.get_timing_dict(dets, snr, sig=_ref_h_nsbh)
+    print timing_nsbh["L1"] / timing_bns["L1"]
+    err_reg_bns = skyutils.solid_angle_error(grid, timing_bns)
+    err_reg_nsbh = skyutils.solid_angle_error(grid, timing_nsbh)
+    print "snr %f: %f" % (snr, (numpy.median(err_reg_nsbh) / numpy.median(err_reg_bns)))

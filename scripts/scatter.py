@@ -5,6 +5,7 @@ import os
 from collections import defaultdict
 from argparse import ArgumentParser
 import operator
+import healpy
 
 import numpy as np
 
@@ -19,7 +20,9 @@ from matplotlib import colorbar
 from matplotlib.ticker import MaxNLocator
 import matplotlib.gridspec as gridspec
 
-from skyutils import *
+import skyutils
+from skyutils import _ref_h_bns, _ref_h_nsbh, _ref_h_nsbh_ms
+
 
 def get_event_num(fname):
     import re
@@ -123,34 +126,20 @@ m.drawmapboundary()
 # Arbitrary midnight UTC
 gpstime = 1e9 - (1e9 % (3600 * 24))
 ra_grid, dec_grid, net_pat, net_align, dpf = \
-    net_antenna_pattern(gpstime, network, norm=True)
+    skyutils.net_antenna_pattern(gpstime, network) #, norm=True)
 #print np.max(net_pat), np.max(net_align)
 
+# Find Integrated network antenna pattern
+filename = 'integrated_net_pat_%s' % configuration
+integrated_net_pat = open(filename, 'w')
+integrated_net_pat.write(str(skyutils.integrate_net_pat(gpstime, network)))
+integrated_net_pat.close()
 
-# FIXME: Still getting warnings, not sure how this is supposed to work.
-#net_pat, ra_grid = basemap.shiftgrid(180, net_pat.flatten(), ra_grid.flatten(), start=False)
-#net_pat_tmp, ra_grid_tmp = basemap.shiftgrid(180., net_pat.flatten(), ra_grid.flatten())
-#ra_grid_tmp = ra_grid_tmp.reshape(dec_grid.shape)
-#net_pat_tmp = net_pat_tmp.reshape(dec_grid.shape)
+
 
 # Probably because we're viewing the sphere from "outside in".
 ra_grid -= 180
 dec_grid *= -1
-
-"""
-# TODO: Make into a function and be consistent
-ra_grid = ra_grid * 180 / np.pi
-ra_grid = np.where(ra_grid < -180, ra_grid + 360, ra_grid)
-ra_grid = np.where(ra_grid > 180, ra_grid - 360, ra_grid)
-# ANNOYING!
-while ra_grid[0,0]/ra_grid[0,-1] > 0:
-    ra_grid = np.roll(ra_grid, -1, axis=1)
-    net_pat = np.roll(net_pat, -1, axis=1)
-    net_align = np.roll(net_align, -1, axis=1)
-    dpf = np.roll(dpf, -1, axis=1)
-ra_grid *= -1
-"""
-
 ra_grid, dec_grid = m(ra_grid, dec_grid)
 
 #
@@ -168,21 +157,6 @@ elif args.underplot == "dpf":
 elif args.underplot == "align":
     m.contourf(ra_grid, dec_grid, net_align, 1000, cmap=matplotlib.cm.Greys_r, vmin=0, vmax=1)
     #plt.savefig("net_align.png")
-
-#
-# Gradient plots disabled for now
-#
-if False:
-    gr_ra_grid, gr_dec_grid, gr_net_pat, _, _ = \
-        net_antenna_pattern(gpstime, network, npts=20, norm=True)
-
-    gr_ra_grid -= 180
-    gr_dec_grid *= -1
-    gr_ra_grid, gr_dec_grid = m(gr_ra_grid, gr_dec_grid)
-
-    net_grad = net_gradient(gr_net_pat, npts=20)
-    m.quiver(gr_ra_grid, gr_dec_grid, net_grad[1], -net_grad[0], color="r")
-    #plt.savefig("net_pat.png")
 
 #
 # Overplot contours of the network antenna pattern
@@ -223,7 +197,7 @@ for label, globpat in pspecs.iteritems():
     #print "Globbed %d files for pattern %s" % (len(files), globpat)
 
     plt.figure(0)
-    for filename in files: #[:10]:  # Change this to run faster
+    for filename in files:# Change this to run faster
         enum = get_event_num(filename)
         #print "Processing event %d" % enum
 
@@ -233,18 +207,14 @@ for label, globpat in pspecs.iteritems():
         gmst = inj[enum].geocent_end_time
         gmst = np.mod(gmst/3600., 24.)
 
-        sky_data, smap = create_table(filename)
+        sky_data, smap = skyutils.create_table(filename)
         ns = healpy.npix2nside(len(smap))
         pix_size = healpy.nside2pixarea(ns, degrees=True)
 
         prb68 = np.searchsorted(sky_data["cumul"], 0.68)
+        prb90 = np.searchsorted(sky_data["cumul"], 0.90)
         prb95 = np.searchsorted(sky_data["cumul"], 0.95)
         prb99 = np.searchsorted(sky_data["cumul"], 0.99)
-
-        # Identify outliers
-        #if prb68 * pix_size > 1e3:
-        #    print prb68 * pix_size
-        #    outliers.append((configuration, enum, prb68*pix_size))
 
         if configuration == "HLV":
             snr = "/projects/b1011/spinning_runs/freezingparams_20160402_IMR/" + str(enum)  + "/none/snr.txt"
@@ -288,64 +258,26 @@ for label, globpat in pspecs.iteritems():
             snrs_new["Network"] = 1.0
             snrs = snrs_new
 
-        #print snrs["Network"]
+        # Calculate antenna pattern and alignment values at specific point
+        ra, dec = inj[enum].longitude, inj[enum].latitude
 
-        if False:
-            cmap = cspecs[label]
-            if cmap.quant == "error_regior":
-                linecolor = cmap(prb68 * pix_size)
-            elif cmap.quant == "snr":
-                linecolor = cmap(snrs["Network"])
+        antenna_pattern = skyutils.net_antenna_pattern_point(gmst, network, ra, dec)[0]
+        alignment = skyutils.net_antenna_pattern_point(gmst, network, ra, dec)[1]
 
-            cache_fname = filename.replace("fits.gz", "intrp.npz")
-            if os.path.exists(cache_fname):
-                #print "Loading cached interpolated map: %s" % cache_fname
-                ra_int, dec_int, prob_int = dict(np.load(cache_fname))["arr_0"]
-            else:
-                ra_int, dec_int, prob_int = interpolate_healpix_map(sky_data["ra"],
-                    sky_data["dec"], smap, npts=500)
-                np.savez(cache_fname, [ra_int, dec_int, prob_int])
+        # Calculate the expected solid angle error, following Schutz 2011 eq.31
+        # Create empty dictionary of network
+        dets = {}
+        for detector in network:
+            dets[detector] = None
+        grid = skyutils._sph_grid(100)
+        timing = skyutils.get_timing_dict(dets, snrs["Network"] / np.sqrt(len(network)), _ref_h_bns)
+        #import pdb; pdb.set_trace()
+        #angle_err = np.squeeze(skyutils.solid_angle_error(grid, timing))
+        angle_err = skyutils.solid_angle_error_point(ra, dec, timing)
+        angle_err *= (180. / np.pi)**2
 
-            # Better idea, figure out by how much this shift the ra_int and shift
-            # the z array by the opposite of that amount
-            ra_int = (-gmst + ra_int) * np.pi / 12
-            # Reverse... and undo the radians...
-            #ra_int = -ra_int * 180 / np.pi
-            ra_int = ra_int * 180 / np.pi
-            ra_int = np.where(ra_int < -180, ra_int + 360, ra_int)
-            ra_int = np.where(ra_int > 180, ra_int - 360, ra_int)
-
-            # ANNOYING!
-            while ra_int[0,0]/ra_int[0,-1] > 0:
-                ra_int = np.roll(ra_int, -1, axis=1)
-                prob_int = np.roll(prob_int, -1, axis=1)
-            ra_int *= -1
-
-            ra_int, dec_int = m(ra_int, dec_int)
-
-            m.contour(ra_int, dec_int, prob_int, [sky_data["prob"][prb68]], colors=(linecolor,), linewidths=0.5)
-
-        # Use gpstime of this injection to find the network antenna pattern at that time at this ra and dec
-        antenna_pattern = net_antenna_pattern_point(gmst, network, inj[enum].longitude, inj[enum].latitude, norm=True)[0]
-        config_information[label].append([prb68 * pix_size, snrs["Network"], antenna_pattern, enum])
-
-            # Debuggin
-            #m.scatter(ra_int.flatten()[-200000:], dec_int.flatten()[-200000:], c=prob_int.flatten()[-200000:], marker='.', edgecolor='none')
-
-        # FIXME: temporary
-        plt.savefig("figures/test_map.png")
-
-filename = 'outliers_%s' % configuration
-outlier_file = open(filename, 'w')
-for run in outliers:
-    #outlier_file.write('Event number: ' + str(run[1]) + ', Second-Highest SNR: ' + str(run[2]))
-    #outlier_file.write('\n')
-    outlier_file.write(str(run))
-    outlier_file.write('\n')
-
-#outlier_file.write(outliers)
-outlier_file.close()
-print outliers
+        # Append event information to an array
+        config_information[label].append([prb90 * pix_size, snrs["Network"], antenna_pattern, enum, alignment, angle_err.min()])
 
 plt.figure(1)
 gs = gridspec.GridSpec(3, 3)
@@ -365,7 +297,7 @@ for label, config in config_information.iteritems():
     antenna_pattern = config[:, 2]
 
     for value in config:
-        plot_data.write(str(value[0]) + ' ' + str(value[1]) + ' ' + str(value[2]) + ' ' + str(int(value[3])))
+        plot_data.write(str(value[0]) + ' ' + str(value[1]) + ' ' + str(value[2]) + ' ' + str(int(value[3])) + ' ' + str(value[4]) + ' ' + str(value[5]))
         plot_data.write('\n')
 
     # Scatter plot of SNR vs. Error Regions
@@ -410,18 +342,3 @@ for label, config in config_information.iteritems():
 
 plt.savefig("figures/snr_vs_err_%s.png" % configuration)
 plot_data.close()
-
-if False:
-    # Set up colorbars
-    for label, cmap in cspecs.iteritems():
-        if not isinstance(cmap.colors, str):
-            cax = plt.gcf().add_axes([0.1, 0.1, 0.8, 0.05])
-            cb = colorbar.ColorbarBase(cax,
-                cmap=cmap.colors, norm=cmap._norm, orientation='horizontal')
-            if cmap.quant == "error_region":
-                label = r"Solid Angle $(deg)^2$ Area of $68\%$ Credible Region"
-            elif cmap.quant == "snr":
-                label = r"Network SNR"
-            colorbar.ColorbarBase.set_label(cb, label, fontsize=14)
-
-    plt.savefig("figures/test_cmap.png")
