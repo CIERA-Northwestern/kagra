@@ -278,6 +278,13 @@ for label, globpat in pspecs.iteritems():
         m.scatter([ra_inj], [dec_inj], marker='x', color='m', s=50)
         """
 
+        """
+        ra_inj, dec_inj = inj[enum].longitude, inj[enum].latitude
+        ra_inj *= ((-gmst * 12 / np.pi) + (ra_inj * 180 / np.pi)) * -1
+        dec_inj *= 180 / np.pi
+        plt.annotate(str(enum), xy=m(ra_inj, dec_inj))
+        """
+
         sky_data, smap = create_table(filename)
         ns = healpy.npix2nside(len(smap))
         pix_size = healpy.nside2pixarea(ns, degrees=True)
